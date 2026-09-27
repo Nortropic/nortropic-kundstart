@@ -20,15 +20,17 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--intervju', required=True)
     p.add_argument('--ut', required=True)
+    p.add_argument('--rev', help='git-revision att ange när filen hämtats ur en annan revision än arbetsträdet (t.ex. origin/main via git show)')
+    p.add_argument('--gren', help='grennamn att ange tillsammans med --rev')
     a = p.parse_args()
     src = Path(a.intervju).resolve()
     data = src.read_bytes()
     spec = importlib.util.spec_from_file_location('intervju', src)
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
-    rev = git(src.parent, 'rev-parse', 'HEAD')
-    smuts = git(src.parent, 'status', '--porcelain', '--', str(src))
-    gren = git(src.parent, 'branch', '--show-current')
+    rev = a.rev or git(src.parent, 'rev-parse', 'HEAD')
+    smuts = '' if a.rev else git(src.parent, 'status', '--porcelain', '--', str(src))
+    gren = a.gren or git(src.parent, 'branch', '--show-current')
     ut = {
         'schema': 'kundstart-bank/1',
         'kalla': {'fil': 'verktyg/intervju.py', 'repo': 'Nortropic/nortropic-digitala', 'sha256': hashlib.sha256(data).hexdigest(),

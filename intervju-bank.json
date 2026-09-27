@@ -3,9 +3,9 @@
  "kalla": {
   "fil": "verktyg/intervju.py",
   "repo": "Nortropic/nortropic-digitala",
-  "sha256": "4e23e54e7b15200dcbfb0c9be202c4484cd1c8e5531582f166062f3c36f8eff5",
-  "git_rev": "be40a42d736064b4cc211d7dc79d3075f4a42472",
-  "gren": "kundstart/verktyg",
+  "sha256": "575c6b0bf339632ebb0d6e2878cb08236fa7337d96d5aeab3bf4421111144564",
+  "git_rev": "94dcb0ef54cc22d91e77e0431c29fab6d03121c4",
+  "gren": "main",
   "ren": true
  },
  "per_omgang": 8,
@@ -225,7 +225,7 @@
  "foljdregler": [
   {
    "namn": "bokning",
-   "monster": "\\bbok(a|ad|ade|at|ar|as|ning|ningar|ningen)\\b|tidsbokning|boka tid|kalender",
+   "monster": "\\bbok(a|ad|ade|at|ar|as|ning|ningar|ningen)\\b|tidsbokning|boka tid|\\bkalend(er|ern|rar|rarna)\\b",
    "flaggor": "i",
    "fragor": [
     {
