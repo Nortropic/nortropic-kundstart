@@ -9,6 +9,8 @@ export default function Start() {
   useEffect(() => {
     const token = (window.location.hash || '').replace(/^#/, '').trim();
     if (!token) {
+      // URL-fragment är extern browserstatus som läses först efter hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLage('saknas');
       return;
     }

@@ -9,7 +9,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "bank:kontroll": "node verktyg/bank_kontroll.mjs"
+    "bank:kontroll": "node verktyg/bank_kontroll.mjs",
+    "test:core": "node tests/core/intag.cjs"
   },
   "dependencies": {
     "@vercel/blob": "2.8.0",

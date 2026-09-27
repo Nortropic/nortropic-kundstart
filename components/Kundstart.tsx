@@ -16,7 +16,7 @@ export default function Kundstart({ start }: { start: Vy }) {
     { id: 'bild', namn: 'Vår bild av er', antal: vy.bild.length || undefined },
     { id: 'material', namn: 'Material', antal: vy.material.length || undefined },
   ];
-  const ai = vy.ai.lage === 'regelstyrd' ? 'AI-stöd: av. Frågorna följer vår standardlista.' : `AI-stöd: på (${vy.ai.modell || vy.ai.lage}). Era ord sparas ordagrant.`;
+  const ai = vy.ai.beskrivning;
   return (
     <main className="ram">
       <header className="huvud">

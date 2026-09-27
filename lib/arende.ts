@@ -5,7 +5,9 @@ import { BANK, grundFraga, luckor, regelFraga, rubrik, serUtSomHemlighet, utlost
 import { hashaToken, nyToken, nyttId } from './atkomst';
 import { ledNasta, type Kandidat, type LedarIndata } from './intervjuledare';
 import { lasDok, laggFil, skapaDok, taBortFil, uppdateraDok } from './lagring';
-import { MAX_ANTAL, MAX_TOTAL } from './material';
+import { MAX_ANTAL, MAX_TOTAL, extrahera } from './material';
+import { signalera } from './overlamning';
+import { samlaBehov, laggBehov, tackning } from './tackning';
 import type { AiLage, Arende, Fakta, FaktaAi, Fraga, Lank, Material, Rattelse, Svar } from './typer';
 
 export class Vagrad extends Error {
@@ -170,7 +172,7 @@ export function bild(a: Arende): BildRad[] {
     const b = senasteKund.get(s.nyckel);
     if (b && b.revision > s.revision) continue;
     if (s.typ === 'vet_inte') {
-      senasteKund.delete(s.nyckel); // kunden vet inte längre: det tidigare ordet står inte kvar som uppgift
+      senasteKund.set(s.nyckel, { varde: 'Vet inte – behöver följas upp', tid: s.mottaget, revision: s.revision, fraga_id: s.fraga_id, kalla: 'kundens svar ' + s.fraga_id });
       continue;
     }
     senasteKund.set(s.nyckel, { varde: s.text, tid: s.mottaget, revision: s.revision, fraga_id: s.fraga_id, kalla: 'kundens svar ' + s.fraga_id });
@@ -201,6 +203,7 @@ export function kandidater(a: Arende): Kandidat[] {
   const senareIds = new Set(a.fragor.filter((f) => f.status === 'senare').map((f) => f.id));
   const kanda = kandaNycklar(a);
   const ut: Kandidat[] = [];
+  for (const b of a.behov || []) if (b.status === 'oppen' && !allaIds.has(b.id)) ut.push({ id: b.id, omrade: 'H', nyckel: b.nyckel, text: b.fraga, paverkar: 'Kundens uppgift i ' + b.kalla_fraga + ': ' + b.citat.slice(0, 200), prio: 1, foljd: true });
   for (const u of a.foljdregler_utlosta) {
     const regel = BANK.foljdregler.find((r) => r.namn === u.regel);
     if (!regel) continue;
@@ -227,7 +230,7 @@ export function aterstar(a: Arende): { viktiga: number; ovriga: number } {
 
 // ---------- svar och rättelser ----------
 
-export async function registreraSvar(id: string, p: { fraga_id: string; text: string; typ: 'text' | 'vet_inte' | 'val'; idempotens: string }): Promise<{ a: Arende; ny: boolean }> {
+export async function registreraSvar(id: string, p: { fraga_id: string; text: string; typ: Svar['typ']; idempotens: string }): Promise<{ a: Arende; ny: boolean }> {
   const text = (p.typ === 'vet_inte' ? 'Vet inte' : String(p.text || '')).replace(/\r\n/g, '\n').trim();
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(p.idempotens)) throw new Vagrad('idempotensnyckel saknas');
   if (p.typ !== 'vet_inte' && !text) throw new Vagrad('svaret är tomt');
@@ -235,6 +238,7 @@ export async function registreraSvar(id: string, p: { fraga_id: string; text: st
   if (serUtSomHemlighet(text)) throw new Vagrad('svaret ser ut att innehålla ett lösenord eller en nyckel; ta bort det, så ordnar vi åtkomst på säker väg', 422);
   let ny = false;
   const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+    ny = false;
     if (a.svar.some((s) => s.idempotens === p.idempotens)) return null;
     const f = a.fragor.find((x) => x.id === p.fraga_id);
     if (!f) throw new Vagrad('frågan finns inte i ärendet', 404);
@@ -248,6 +252,10 @@ export async function registreraSvar(id: string, p: { fraga_id: string; text: st
     const s: Svar = { fraga_id: f.id, nyckel: f.nyckel, omrade: f.omrade, text, typ: p.typ, mottaget: nu(), revision: a.revision, idempotens: p.idempotens, ersatter: tidigare ? tidigare.revision : undefined };
     a.svar.push(s);
     f.status = 'besvarad';
+    const behov = a.behov?.find(b => b.id === f.id);
+    if (behov) behov.status = p.typ === 'vet_inte' || p.typ === 'atkomst_saknas' ? 'oppen' : 'besvarad';
+    samlaBehov(a, s);
+    signalera(a);
     for (const t of a.fakta_ai) if (t.nyckel === f.nyckel && t.giltig) { t.giltig = false; t.forkastad_skal = 'kundens senare svar ' + f.id; }
     if (p.typ !== 'vet_inte') {
       for (const u of utlosta(text)) {
@@ -304,6 +312,7 @@ export async function registreraRattelse(id: string, p: { nyckel: string; varde:
   if (serUtSomHemlighet(varde)) throw new Vagrad('texten ser ut att innehålla ett lösenord eller en nyckel; ta bort det', 422);
   let ny = false;
   const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+    ny = false;
     if (a.rattelser.some((x) => x.idempotens === p.idempotens)) return null;
     const rad = bild(a).find((b) => b.nyckel === p.nyckel);
     if (!rad && !a.fragor.some((f) => f.nyckel === p.nyckel)) throw new Vagrad('uppgiften finns inte i er bild', 404);
@@ -312,6 +321,7 @@ export async function registreraRattelse(id: string, p: { nyckel: string; varde:
     const tidigare: Rattelse['tidigare'] = rad ? { varde: rad.varde, kalla: rad.kalla, typ: rad.typ === 'kund' ? 'svar' : rad.typ } : { varde: '', kalla: '', typ: 'ingen' };
     a.rattelser.push({ nyckel: p.nyckel, varde, mottaget: nu(), revision: a.revision, idempotens: p.idempotens, tidigare });
     for (const t of a.fakta_ai) if (t.nyckel === p.nyckel && t.giltig) { t.giltig = false; t.forkastad_skal = 'kundens rättelse'; }
+    signalera(a);
     handelse(a, 'rattelse', { nyckel: p.nyckel, tidigare: tidigare.typ });
     ny = true;
     return a;
@@ -323,13 +333,13 @@ export async function registreraRattelse(id: string, p: { nyckel: string; varde:
 
 function tillIndata(a: Arende, k: Kandidat[]): LedarIndata {
   const fragaText = (fid: string) => a.fragor.find((f) => f.id === fid)?.text || fid;
-  const dialog = a.svar.map((s) => ({ fraga_id: s.fraga_id, fraga: fragaText(s.fraga_id), svar: s.text }));
+  const dialog = a.svar.filter((s, index, arr) => arr.findLastIndex(x => x.fraga_id === s.fraga_id) === index).map((s) => ({ fraga_id: s.fraga_id, fraga: fragaText(s.fraga_id), svar: s.text }));
   return {
     kund: { namn: a.kund.namn },
     kanda: bild(a).map((b) => ({ nyckel: b.nyckel, varde: b.varde, kalla: b.typ === 'kund' ? 'kunden' : b.typ === 'ai' ? 'vår tolkning' : b.kalla })),
     dialog,
     senaste: dialog[dialog.length - 1] || null,
-    kandidater: k.slice(0, 14),
+    kandidater: k, // Alla relevanta områden måste kunna täckas av ett flertematiskt svar.
     material: a.material.filter((m) => m.status === 'mottagen').length,
   };
 }
@@ -356,16 +366,20 @@ export async function nasta(id: string): Promise<NastaResultat> {
   if (lage !== 'regelstyrd' && forsta.ai.anrop >= MAX_AI_ANROP) { lage = 'regelstyrd'; skal = 'budget för AI-anrop i ärendet är slut'; }
   if (lage !== 'regelstyrd' && forsta.ai.paus_till && new Date(forsta.ai.paus_till).getTime() > Date.now()) { lage = 'regelstyrd'; skal = 'AI-stödet pausat efter upprepade fel'; }
   const basRevision = forsta.revision;
-  const res = await ledNasta(tillIndata(forsta, k), lage, forsta.ai.modell || process.env.KUNDSTART_AI_MODELL || 'openai/gpt-5-mini');
+  const res = await ledNasta(tillIndata(forsta, k), lage, forsta.ai.modell || process.env.KUNDSTART_AI_MODELL || 'openai/gpt-5-mini', MAX_AI_ANROP - forsta.ai.anrop);
   const ut = res.utdata!;
   const anvandModell = lage !== 'regelstyrd';
 
   const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
     const annanHannFore = a.fragor.some((f) => f.status === 'stalld');
     if (annanHannFore && !anvandModell) return null;
+    const inaktuell = a.revision !== basRevision;
     bump(a);
+    a.ai.aktuell = skal ? 'pausad' : res.fallback ? 'reserv' : lage === 'regelstyrd' ? 'av' : 'aktiv';
+    a.ai.felklass = res.felklass;
+    a.ai.diagnostik = res.diagnostik;
     if (anvandModell) {
-      a.ai.anrop += 1;
+      a.ai.anrop += res.forsok || 1;
       a.ai.tokens_in += res.tokens_in;
       a.ai.tokens_out += res.tokens_out;
       if (res.fel) {
@@ -383,9 +397,13 @@ export async function nasta(id: string): Promise<NastaResultat> {
         a.ai.senaste_lyckade = nu();
       }
     }
-    if (annanHannFore) {
-      handelse(a, 'nasta_forkastad', { skal: 'en annan flik hann ställa nästa fråga; anropet bokfört', lage: res.lage });
+    if (annanHannFore || inaktuell) {
+      handelse(a, 'nasta_forkastad', { skal: inaktuell ? 'kundrevisionen ändrades under modellväntan; inget gammalt modellinnehåll används' : 'en annan flik hann ställa nästa fråga; anropet bokfört', lage: res.lage });
       return a; // bara räknarna sparas; frågorna från detta anrop används inte
+    }
+    for (const b of ut.behov || []) {
+      const kallSvar = [...a.svar].reverse().find(s => s.text.includes(b.citat));
+      if (kallSvar) laggBehov(a, b, kallSvar, 'ai');
     }
     const kNu = new Map(kandidater(a).map((x) => [x.id, x]));
     const senareRattat = new Set([...a.rattelser.filter((x) => x.revision > basRevision).map((x) => x.nyckel), ...a.svar.filter((x) => x.revision > basRevision).map((x) => x.nyckel)]);
@@ -420,9 +438,9 @@ export async function nasta(id: string): Promise<NastaResultat> {
       const kand = kNu.get(v.id)!;
       const senare = a.fragor.find((f) => f.id === v.id && f.status === 'senare');
       if (senare) a.fragor.splice(a.fragor.indexOf(senare), 1);
-      a.fragor.push({ id: kand.id, omrade: kand.omrade, nyckel: kand.nyckel, text: v.text, banktext: v.text !== kand.text ? kand.text : undefined, paverkar: kand.paverkar, utlost_av: kand.utlost_av ?? null, kalla: v.text !== kand.text ? 'ai-omformulering' : 'bank', typ: v.typ, alternativ: v.alternativ.length ? v.alternativ : undefined, omgang: a.omgang, stalld: nu(), status: 'stalld', valjare: res.lage === 'regelstyrd' ? 'regelstyrd' : 'ai' });
+      a.fragor.push({ id: kand.id, omrade: kand.omrade, nyckel: kand.nyckel, text: v.text, banktext: v.text !== kand.text ? kand.text : undefined, paverkar: kand.paverkar, utlost_av: kand.utlost_av ?? null, kalla: kand.id.startsWith('BEH') ? 'behov' : v.text !== kand.text ? 'ai-omformulering' : 'bank', typ: v.typ, alternativ: v.alternativ.length ? v.alternativ : undefined, omgang: a.omgang, stalld: nu(), status: 'stalld', valjare: res.lage === 'regelstyrd' ? 'regelstyrd' : 'ai' });
     }
-    handelse(a, 'nasta', { lage: res.lage, fallback: res.fallback, fel: res.fel, valda: valda.map((v) => v.id), tackta: ut.tackta.map((t) => t.fraga_id), ms: res.ms, skal });
+    handelse(a, 'nasta', { lage: res.lage, fallback: res.fallback, fel: res.fel, valda: valda.map((v) => v.id), tackta: ut.tackta.map((t) => t.fraga_id), ms: res.ms, skal, felklass: res.felklass, diagnostik: res.diagnostik });
     return a;
   });
   const a = r.data;
@@ -445,10 +463,15 @@ export async function laggMaterialFil(id: string, p: { filnamn: string; mime: st
   const blobStig = await laggFil(`material/${id}/${mid}`, p.data, p.mime);
   let ny = false;
   const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+    ny = false;
     if (a.material.some((m) => m.idempotens === p.idempotens)) return null;
+    const nuAktiva = a.material.filter(m => m.status === 'mottagen' && m.typ === 'fil');
+    if (nuAktiva.some(m => m.sha256 === p.sha256)) return null;
+    if (nuAktiva.length >= MAX_ANTAL || nuAktiva.reduce((sum, m) => sum + (m.storlek || 0), 0) + p.data.byteLength > MAX_TOTAL) throw new Vagrad('materialgränsen har nåtts', 422);
     bump(a);
-    const m: Material = { id: mid, typ: 'fil', filnamn: p.filnamn, mime: p.mime, storlek: p.data.byteLength, sha256: p.sha256, blob: blobStig, beskrivning: p.beskrivning?.slice(0, 300), status: 'mottagen', mottaget: nu(), revision: a.revision, idempotens: p.idempotens };
+    const m: Material = { extraktion: extrahera(p.mime, new Uint8Array(p.data), p.sha256), id: mid, typ: 'fil', filnamn: p.filnamn, mime: p.mime, storlek: p.data.byteLength, sha256: p.sha256, blob: blobStig, beskrivning: p.beskrivning?.slice(0, 300), status: 'mottagen', mottaget: nu(), revision: a.revision, idempotens: p.idempotens };
     a.material.push(m);
+    signalera(a);
     handelse(a, 'material', { id: mid, mime: p.mime, storlek: p.data.byteLength });
     ny = true;
     return a;
@@ -461,11 +484,13 @@ export async function laggMaterialLank(id: string, p: { url: string; beskrivning
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(p.idempotens)) throw new Vagrad('idempotensnyckel saknas');
   let ny = false;
   const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+    ny = false;
     if (a.material.some((m) => m.idempotens === p.idempotens)) return null;
     if (a.material.filter((m) => m.status === 'mottagen').length >= MAX_ANTAL * 2) throw new Vagrad('för många poster', 422);
     bump(a);
     const m: Material = { id: nyttId('m'), typ: 'lank', url: p.url, beskrivning: p.beskrivning?.slice(0, 300), status: 'mottagen', mottaget: nu(), revision: a.revision, idempotens: p.idempotens };
     a.material.push(m);
+    signalera(a);
     handelse(a, 'material_lank', { id: m.id });
     ny = true;
     return a;
@@ -480,6 +505,7 @@ export async function taBortMaterial(id: string, mid: string): Promise<Arende> {
     if (!m || m.status === 'borttagen') return null;
     bump(a);
     m.status = 'borttagen';
+    signalera(a);
     blob = m.blob;
     handelse(a, 'material_borttaget', { id: mid });
     return a;
@@ -496,6 +522,7 @@ export async function lamnaIn(id: string): Promise<Arende> {
     if (sista && sista.revision === a.revision) return null;
     bump(a);
     a.inlamningar.push({ tid: nu(), revision: a.revision, svar: a.svar.length, material: a.material.filter((m) => m.status === 'mottagen').length });
+    signalera(a, 'inlamning');
     handelse(a, 'inlamnad', { svar: a.svar.length });
     return a;
   });
@@ -518,6 +545,11 @@ export function exportPaket(a: Arende) {
     exporterad: nu(),
     arende: { id: a.id, kund: a.kund, kanal: a.kanal, testdialog: a.testdialog, skapad: a.skapad, revision: a.revision, inlamningar: a.inlamningar },
     bank: BANK.kalla,
+    signal: a.signal,
+    kvittenser: a.kvittenser || [],
+    returfragor: a.returfragor || [],
+    behov: a.behov || [],
+    tackning: tackning(a),
     ai: a.ai,
     fakta_forifyllda: a.fakta_forifyllda,
     omgangar,
@@ -525,7 +557,7 @@ export function exportPaket(a: Arende) {
     rattelser: a.rattelser,
     fakta_ai: faktaAi,
     rattelser_fakta: rattelserFakta,
-    material: a.material.filter((m) => m.status === 'mottagen').map((m) => ({ id: m.id, typ: m.typ, filnamn: m.filnamn, mime: m.mime, storlek: m.storlek, sha256: m.sha256, url: m.url, beskrivning: m.beskrivning, mottaget: m.mottaget, revision: m.revision })),
+    material: a.material.filter((m) => m.status === 'mottagen').map((m) => ({ id: m.id, typ: m.typ, filnamn: m.filnamn, mime: m.mime, storlek: m.storlek, sha256: m.sha256, url: m.url, beskrivning: m.beskrivning, mottaget: m.mottaget, revision: m.revision, extraktion: m.extraktion, lasning: m.lasning, lasstatus: m.lasning ? 'last' : m.extraktion ? 'extraherad' : 'mottagen' })),
     foljdregler_utlosta: a.foljdregler_utlosta,
     foljdregler_negerade: a.foljdregler_negerade || [],
     handelser: a.handelser.slice(-100),

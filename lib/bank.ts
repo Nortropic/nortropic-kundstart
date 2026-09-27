@@ -1,5 +1,5 @@
 // Digitalas frågebank (snapshot ur nortropic-digitala verktyg/intervju.py) och den regelstyrda delen av
-// intervjulogiken: luckor i prioritetsordning och följdfrågor ur svaren. Kundstart har inga egna frågor.
+// intervjulogiken: luckor i prioritetsordning och följdfrågor ur svaren. Källbundna behov/returfrågor är separata från bankens snapshot.
 import bankJson from '../intervju-bank.json';
 
 export interface BankFraga { id: string; omrade: string; nyckel: string; text: string; paverkar: string; prio: number }

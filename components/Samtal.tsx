@@ -1,6 +1,8 @@
 'use client';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnropsFel, anropa, klockslag, lasUtkast, nyNyckel, sparaUtkast } from '@/lib/klient';
+import type { Svar } from '@/lib/typer';
 import type { FragaVy, Vy } from '@/lib/vy';
 
 type NastaSvar = { ok: true; klar: boolean; meddelande: string; ai: { lage: string; anvand: boolean; fallback: boolean; fel?: string; modell?: string }; fragor: FragaVy[]; vy: Vy };
@@ -25,7 +27,7 @@ export default function Samtal({ vy, setVy, gaTill }: { vy: Vy; setVy: (v: Vy) =
       const r = await anropa<NastaSvar>('/api/nasta', { method: 'POST' });
       setVy(r.vy);
       setMeddelande(r.ai.anvand ? r.meddelande : '');
-      setAiNot(r.ai.fallback ? 'AI-stödet nåddes inte just nu, så nästa fråga följer vår standardlista. Era svar är sparade.' : '');
+      setAiNot(r.vy.ai.status === 'reserv' || r.vy.ai.status === 'pausad' ? r.vy.ai.beskrivning : '');
       setSparat('');
     } catch (e) {
       setHamtFel((e as AnropsFel).message);
@@ -132,6 +134,7 @@ export default function Samtal({ vy, setVy, gaTill }: { vy: Vy; setVy: (v: Vy) =
         </div>
       )}
 
+      {vy.dialog.length > 0 && <Tackningsbild vy={vy} />}
       {!vy.arende.inlamnad && !vy.klar && (
         <p className="aterstar">
           {kvar.viktiga > 0 ? `Kvar just nu: ${kvar.viktiga} ${kvar.viktiga === 1 ? 'fråga' : 'frågor'} som påverkar lösningen` : 'Inga fler frågor som påverkar lösningen just nu'}
@@ -148,17 +151,20 @@ export default function Samtal({ vy, setVy, gaTill }: { vy: Vy; setVy: (v: Vy) =
 }
 
 function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga: FragaVy; arendeId: string; meddelande: string; rubrikRef?: React.MutableRefObject<HTMLHeadingElement | null>; onSparat: (v: Vy, tid: string) => void }) {
+  const router = useRouter();
   const nyckel = arendeId + ':' + fraga.id;
   const [text, setText] = useState('');
   const [idempotens, setIdempotens] = useState('');
   const [val, setVal] = useState('');
   const [lage, setLage] = useState<'tom' | 'osparad' | 'sparar' | 'sparat' | 'fel'>('tom');
   const [fel, setFel] = useState('');
-  const [senasteTyp, setSenasteTyp] = useState<'text' | 'vet_inte' | 'val'>('text');
+  const [senasteTyp, setSenasteTyp] = useState<Svar['typ']>('text');
 
   useEffect(() => {
     const u = lasUtkast(nyckel);
     if (u) {
+      // sessionStorage är extern browserstatus; utkast återställs efter hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setText(u.text);
       setIdempotens(u.idempotens);
       if (u.text) setLage('osparad');
@@ -173,7 +179,7 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
     setLage(t.trim() ? 'osparad' : 'tom');
   }
 
-  async function skicka(typ: 'text' | 'vet_inte' | 'val') {
+  async function skicka(typ: Svar['typ']) {
     if (lage === 'sparar') return;
     setSenasteTyp(typ);
     const innehall = typ === 'val' ? val : text;
@@ -196,7 +202,7 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
       const f = e as AnropsFel;
       setLage('fel');
       setFel(f.message);
-      if (f.status === 401) window.location.href = '/lank?skal=session';
+      if (f.status === 401) router.push('/lank?skal=session');
     }
   }
 
@@ -230,6 +236,8 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
       <div className="rad">
         <button type="button" className="knapp" onClick={() => void skicka(fraga.typ === 'val' && val && !text.trim() ? 'val' : 'text')} disabled={lage === 'sparar' || (!text.trim() && !val)}>{lage === 'sparar' ? 'Sparar …' : 'Spara svar'}</button>
         <button type="button" className="knapp sekundar" onClick={() => void skicka('vet_inte')} disabled={lage === 'sparar'}>Vet inte</button>
+        <button type="button" className="knapp sekundar" onClick={() => void skicka('ej_tillampligt')} disabled={lage === 'sparar' || !text.trim()}>Gäller inte oss (ange varför)</button>
+        <button type="button" className="knapp sekundar" onClick={() => void skicka('atkomst_saknas')} disabled={lage === 'sparar' || !text.trim()}>Åtkomst saknas (beskriv)</button>
         <button type="button" className="knapp lank" onClick={() => void senare()} disabled={lage === 'sparar'}>Återkom senare</button>
       </div>
       <p className={'status ' + lage} role="status" aria-live="polite">{statusText}</p>
@@ -254,7 +262,7 @@ function Bekraftelse({ vy, gaTill }: { vy: Vy; gaTill: (f: 'samtal' | 'bild' | '
         <li>{vy.bild.filter((b) => b.typ === 'ai').length} tolkningar från AI-stödet, som ni kan rätta</li>
       </ul>
       <h3>Vad som händer nu</h3>
-      <p>Digitala hos Nortropic läser igenom det ni lämnat och undersöker vidare på egen hand. Behöver vi fråga något mer samlar vi frågorna och hör av oss genom {vy.arende.kanal === 'Kundstart-länk' ? 'den kontaktväg ni har med oss' : vy.arende.kanal}.</p>
+      <p>{vy.overlamning} Eventuella kompletteringsfrågor visas i det här samtalet när ni öppnar länken igen. Att material är mottaget betyder ännu inte att det är läst.</p>
       <p className="dis liten">Det här är en inlämning av underlag, inte ett godkännande av en design eller ett avtal om fler tjänster. Ni kan öppna länken igen och ändra eller lägga till; det ni ändrar efter inlämningen syns för oss.</p>
       <div className="rad">
         <button type="button" className="knapp sekundar" onClick={() => gaTill('bild')}>Se vår bild av er</button>
@@ -262,4 +270,10 @@ function Bekraftelse({ vy, gaTill }: { vy: Vy; gaTill: (f: 'samtal' | 'bild' | '
       </div>
     </div>
   );
+}
+
+function Tackningsbild({ vy }: { vy: Vy }) {
+  const oppna = vy.tackning.filter(t => ['inte_undersokt', 'kunden_vet_inte', 'atkomst_saknas', 'aterkom_senare'].includes(t.status));
+  const status: Record<string, string> = { inte_undersokt: 'ännu inte undersökt', kunden_vet_inte: 'ni vet inte ännu', atkomst_saknas: 'åtkomst saknas', aterkom_senare: 'ni vill återkomma' };
+  return <details className="not"><summary>Vad som fortfarande behöver undersökas ({oppna.length})</summary><p>Ni kan lämna in redan nu. De här frågorna följer med som öppna frågor och blir inte automatiskt ”behövs inte”. Digitala väljer relevanta kompletteringar.</p><ul>{oppna.map(t => <li key={t.nyckel}>{t.fraga} — {status[t.status]}</li>)}</ul>{vy.behov.filter(b => b.status === 'oppen').map(b => <p key={b.nyckel}>Öppet behov från era ord: ”{b.citat}”</p>)}</details>;
 }

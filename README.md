@@ -12,7 +12,7 @@ kanal i den modellen ("Kundstart-länk"), inte en egen intervjumotor och inte en
 2. **Berätta och komplettera** — en fråga i taget ur Digitalas frågebank; följdfrågor beror på svaren (regler ur
    `intervju.py`, eller AI-stödet när det är på); "vet inte" och "återkom senare" är riktiga svar; material som fil
    eller länk.
-3. **Se och rätta förståelsen** — vår bild av kunden: kundens egna ord, AI:ns tolkningar (märkta) och det förifyllda,
+3. **Se och rätta förståelsen** — vår bild av kunden: kundens egna ord, öppna källbundna behov, AI:ns tolkningar (märkta) och det förifyllda,
    allt möjligt att rätta. Inlämning bekräftar vad som lämnats och vad som händer, utan design- eller avtalsgodkännande.
 
 ## Hur det hänger ihop
@@ -27,10 +27,10 @@ Digitala (kundmappen, INTERVJU.json)  ◀── verktyg/kundstart.py hamta ─�
 
 - **Frågebanken** är en snapshot av `GRUND`, `FOLJDREGLER` m.m. ur `nortropic-digitala/verktyg/intervju.py`
   (`intervju-bank.json`, med filens sha256 och git-revision). `verktyg/bank_snapshot.py` tar den, `verktyg/bank_kontroll.mjs`
-  visar drift. Kundstart har inga egna frågor och inga egna fråge-id.
+  visar drift. Banken är stöd; källbundna behov och revisionsbundna returfrågor kan tillkomma i samma ärende. Se KUNDSTART-KONTRAKT.md.
 - **Intervjuledaren** (`lib/intervjuledare.ts`) väljer nästa fråga bland kandidaterna (följdfrågor först, sedan luckor i
   prioritetsordning) och avgör vilka kandidater ett öppet svar redan täcker. Modellen får bara returnera strukturerad
-  data mot kandidatlistan; allt valideras på servern, ogiltiga svar faller tillbaka till den regelstyrda vägen. Ingen
+  data mot kandidatlistan; id och källcitat valideras på servern, ogiltiga svar faller tillbaka till den regelstyrda vägen. Ingen
   HTML eller kod från modellen körs hos kunden.
 - **Lagring** (`lib/lagring.ts`): privata JSON-dokument och filer i Vercel Blob (region Stockholm), villkorad skrivning
   med ETag och omförsök; idempotensnycklar och innehållsregler (samma text på samma fråga, samma fil enligt sha256)
@@ -58,3 +58,7 @@ npm run test:e2e                  # Playwright mot 127.0.0.1:3111 (startar serve
 
 `KUNDSTART_AI` = `gateway` (Vercel AI Gateway, skarpt läge), `regelstyrd` (ingen modell; frågorna följer bankens ordning)
 eller `claude-cli` (bara lokal verifiering i byggmiljön genom `claude -p`; vägrar på Vercel).
+
+## Överlämning och åtgärdskontrakt
+
+[KUNDSTART-KONTRAKT.md](KUNDSTART-KONTRAKT.md) beskriver den beständiga revisionssignalen, intern kvittens, returfrågor, materialets lässtatus och AI-felklasser. Signalen är en del av befintligt ärende; faktisk schemalagd import verifieras i Digitala/Runtime. G01:s legitima hostade kundåtkomst är en separat driftskonfiguration och bevisas inte av intern Vercel-bypass.

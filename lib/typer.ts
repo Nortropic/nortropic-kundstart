@@ -28,7 +28,7 @@ export interface Fraga {
   text: string;
   paverkar: string;
   utlost_av?: string | null;
-  kalla: 'bank' | 'ai-omformulering';
+  kalla: 'bank' | 'ai-omformulering' | 'returfraga' | 'behov';
   banktext?: string;
   typ: 'oppen' | 'val';
   alternativ?: string[];
@@ -43,7 +43,7 @@ export interface Svar {
   nyckel: string;
   omrade: string;
   text: string;
-  typ: 'text' | 'vet_inte' | 'val';
+  typ: 'text' | 'vet_inte' | 'val' | 'ej_tillampligt' | 'atkomst_saknas';
   mottaget: string;
   revision: number;
   idempotens: string;
@@ -73,6 +73,8 @@ export interface Material {
   mottaget: string;
   revision: number;
   idempotens: string;
+  extraktion?: { text: string; format: string; kalla_sha256: string; varning: string };
+  lasning?: { tid: string; utforare: string; resultat: string; sha256: string };
 }
 
 export interface Handelse {
@@ -96,6 +98,9 @@ export interface AiTillstand {
   senaste_fel_tid?: string;
   senaste_lyckade?: string;
   paus_till?: string;
+  aktuell?: 'aktiv' | 'reserv' | 'pausad' | 'av';
+  felklass?: string;
+  diagnostik?: Record<string, unknown>[];
 }
 
 export interface Inlamning {
@@ -127,6 +132,10 @@ export interface Arende {
   omgang: number;
   inlamningar: Inlamning[];
   handelser: Handelse[];
+  signal?: Signal;
+  kvittenser?: { signal_id: string; revision: number; utforare: string; import_sha256: string; tid: string }[];
+  returfragor?: { idempotens: string; bas_revision: number; utforare: string; fragor: string[]; tid: string }[];
+  behov?: Behov[];
 }
 
 export interface Lank {
@@ -143,3 +152,6 @@ export interface SessionsData {
   l: string; // länkens hash (sha256 hex)
   exp: number; // unix-sekunder
 }
+
+export interface Signal { id: string; arende_id: string; kund: { slug: string; namn: string }; revision: number; typ: 'inlamning' | 'komplettering'; skapad: string }
+export interface Behov { id: string; nyckel: string; citat: string; fraga: string; kalla_fraga: string; revision: number; status: 'oppen' | 'besvarad'; metod: 'regel' | 'ai'; }

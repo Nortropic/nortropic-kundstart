@@ -28,9 +28,9 @@ Läst mot Vercels dokumentation 2026-09-27 (AI Gateway pricing/authentication/OI
 - Länk: 256 bitar, hash i lagret, giltig 30 dagar (styrbart), återkallbar; kakan signerad, httpOnly, 30 dagar; alla
   kund-API:er kräver giltig kaka *och* giltig länk vid varje anrop.
 - AI: högst `KUNDSTART_AI_MAX_ANROP` anrop per ärende; efter tre fel i rad (räknaren nollställs vid lyckat anrop)
-  pausas AI-stödet i tio minuter (regelstyrd väg tar över, kunden ser det); anrop tar högst 30 s; modellens svar
+  pausas AI-stödet i tio minuter (regelstyrd väg tar över, kunden ser det); gatewayanrop tar högst20s och har högst två försök; modellens svar
   valideras mot kandidatlistan och längdgränser. Fri text från kunden startar aldrig research, verktygsloopar eller
-  webbhämtning. Sidfoten visar den modell som senast svarade.
+  webbhämtning. Sidfoten visar faktisk aktuell AI-/reserv-/pausstatus; senaste svarande modell anges bara som kontext.
 - Svar: högst 4 000 tecken; texter som ser ut som lösenord eller nycklar vägras och sparas inte.
 - Material: 4 MB per fil, 25 filer, 40 MB per ärende, högst 50 poster inklusive länkar, typ ur innehållet; SVG med
   skript vägras; nedladdning bara genom funktionen med `Content-Disposition: attachment`. Länkar sparas som text och
@@ -55,8 +55,8 @@ Läst mot Vercels dokumentation 2026-09-27 (AI Gateway pricing/authentication/OI
 
 | Läge | Hur nästa fråga väljs | Vad kunden ser |
 |---|---|---|
-| `gateway` | modellen väljer bland kandidaterna, omformulerar, markerar täckta frågor, håller bilden | "AI-stöd: på (modell)"; AI:ns tolkningar märkta i Vår bild |
-| fallback vid fel | regelstyrd för den frågan | "AI-stödet nåddes inte just nu, så nästa fråga följer vår standardlista. Era svar är sparade." |
+| `gateway` | modellen väljer bland kandidaterna, omformulerar, markerar täckta frågor, håller bilden | "AI-stöd: tillgängligt (modell)"; AI:ns tolkningar märkta i Vår bild |
+| fallback vid fel | regelstyrd för den frågan | "AI-stöd: reservläge efter ett fel" eller "AI-stöd: pausat", även efter omladdning |
 | `regelstyrd` | följdfrågor först, sedan luckor i prioritetsordning | "AI-stöd: av. Frågorna följer vår standardlista." |
 
 ## Återställning och radering
@@ -64,3 +64,7 @@ Läst mot Vercels dokumentation 2026-09-27 (AI Gateway pricing/authentication/OI
 Ärendet är ett dokument (`arenden/<id>.json`) plus material (`material/<id>/…`) och länkar (`lankar/<hash>.json`).
 Radering på kundens begäran: ta bort dokument och filer i Blob-lagret (`vercel blob del`) efter att exporten hämtats till
 kundmappen. Ingen automatisk gallring är inbyggd; bestäm bevarandetid i beställningen.
+
+## Kandidatens nya kontrakt
+
+Se [KUNDSTART-KONTRAKT.md](KUNDSTART-KONTRAKT.md). Föregående kostnadsuppskattning baserades på den äldre tokenbudgeten och är historisk; den bevisar ingen kostnad för den nya kandidaten. Modellen och befintligt konto behålls, inga köpta krediter tillförs.
