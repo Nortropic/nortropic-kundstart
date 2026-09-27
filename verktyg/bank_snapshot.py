@@ -41,6 +41,9 @@ def main():
                          'fragor': [{'id': f[0], 'omrade': f[1], 'nyckel': f[2], 'text': f[3]} for f in fr], 'paverkar': pv}
                         for n, rx, fr, pv in m.FOLJDREGLER],
         'hemligt': {'monster': m.HEMLIGT.pattern, 'flaggor': 'i'},
+        # NEGATION (intervju.py sedan main e7c3bdf): en regelträff med negation i samma sats (inga . ; ! ? emellan) inom
+        # 40 tecken före träffen ger ingen följdfråga utan bokförs som negerad; Kundstart speglar samma satsregel.
+        'negation': ({'monster': m.NEGATION.pattern, 'flaggor': 'i', 'fonster': 40, 'satsgrans': '[.;!?]'} if hasattr(m, 'NEGATION') else None),
     }
     Path(a.ut).write_text(json.dumps(ut, ensure_ascii=False, indent=1) + '\n', encoding='utf-8')
     print(json.dumps({'grund': len(ut['grund']), 'foljdregler': len(ut['foljdregler']), 'sha256': ut['kalla']['sha256'][:12], 'git_rev': rev, 'ren': ut['kalla']['ren']}))

@@ -3,8 +3,8 @@
  "kalla": {
   "fil": "verktyg/intervju.py",
   "repo": "Nortropic/nortropic-digitala",
-  "sha256": "b39f9a0525e56bdac5c4427e7df178d65adaa394b345e785942e6dee45b333eb",
-  "git_rev": "03caf0b5473eb45b5548ca999ed975f318b7accd",
+  "sha256": "4e23e54e7b15200dcbfb0c9be202c4484cd1c8e5531582f166062f3c36f8eff5",
+  "git_rev": "be40a42d736064b4cc211d7dc79d3075f4a42472",
   "gren": "kundstart/verktyg",
   "ren": true
  },
@@ -225,7 +225,7 @@
  "foljdregler": [
   {
    "namn": "bokning",
-   "monster": "\\bbok(a|ning|ningar|as|ar)\\b|tidsbokning|boka tid",
+   "monster": "\\bbok(a|ad|ade|at|ar|as|ning|ningar|ningen)\\b|tidsbokning|boka tid|kalender",
    "flaggor": "i",
    "fragor": [
     {
@@ -395,5 +395,11 @@
  "hemligt": {
   "monster": "(l[öo]senord|password|api[- ]?nyckel|api key|secret|token)\\s*[:=]\\s*\\S{4,}|\\b(sk_live|re_|AKIA|ghp_)[A-Za-z0-9]{8,}",
   "flaggor": "i"
+ },
+ "negation": {
+  "monster": "(?i)\\b(inga|ingen|inget|inte|ej|aldrig|utan|slipper)\\b",
+  "flaggor": "i",
+  "fonster": 40,
+  "satsgrans": "[.;!?]"
  }
 }

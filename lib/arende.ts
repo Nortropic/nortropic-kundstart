@@ -243,6 +243,11 @@ export async function registreraSvar(id: string, p: { fraga_id: string; text: st
     for (const t of a.fakta_ai) if (t.nyckel === f.nyckel && t.giltig) { t.giltig = false; t.forkastad_skal = 'kundens senare svar ' + f.id; }
     if (p.typ !== 'vet_inte') {
       for (const u of utlosta(text)) {
+        if (u.negerad) {
+          a.foljdregler_negerade = a.foljdregler_negerade || [];
+          if (!a.foljdregler_negerade.some((x) => x.regel === u.regel.namn && x.fraga_id === f.id)) a.foljdregler_negerade.push({ regel: u.regel.namn, fraga_id: f.id, traff: u.traff, sats: u.sats, tid: nu() });
+          continue;
+        }
         if (!a.foljdregler_utlosta.some((x) => x.regel === u.regel.namn && x.fraga_id === f.id)) a.foljdregler_utlosta.push({ regel: u.regel.namn, fraga_id: f.id, traff: u.traff, tid: nu() });
       }
     } else {
@@ -498,6 +503,7 @@ export function exportPaket(a: Arende) {
     rattelser_fakta: rattelserFakta,
     material: a.material.filter((m) => m.status === 'mottagen').map((m) => ({ id: m.id, typ: m.typ, filnamn: m.filnamn, mime: m.mime, storlek: m.storlek, sha256: m.sha256, url: m.url, beskrivning: m.beskrivning, mottaget: m.mottaget, revision: m.revision })),
     foljdregler_utlosta: a.foljdregler_utlosta,
+    foljdregler_negerade: a.foljdregler_negerade || [],
     handelser: a.handelser.slice(-100),
   };
 }

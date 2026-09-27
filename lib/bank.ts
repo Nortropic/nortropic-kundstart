@@ -13,12 +13,15 @@ export interface Bank {
   grund: BankFraga[];
   foljdregler: BankRegel[];
   hemligt: { monster: string; flaggor: string };
+  negation: { monster: string; flaggor: string; fonster: number; satsgrans: string } | null;
 }
 
 export const BANK = bankJson as Bank;
 
 const REGLER = BANK.foljdregler.map((r) => ({ ...r, rx: new RegExp(r.monster, r.flaggor.includes('i') ? 'iu' : 'u') }));
 const HEMLIGT = new RegExp(BANK.hemligt.monster, 'iu');
+// Pythons (?i)-prefix blir JS-flaggan i.
+const NEGATION = BANK.negation ? new RegExp(BANK.negation.monster.replace(/^\(\?i\)/, ''), 'iu') : null;
 
 export function grundFraga(id: string): BankFraga | undefined {
   return BANK.grund.find((g) => g.id === id);
@@ -39,13 +42,24 @@ export function luckor(kanda: Set<string>, stallda: Set<string>): BankFraga[] {
     .filter((g) => !kanda.has(g.nyckel) && !stallda.has(g.id));
 }
 
-/** Följdregler som ett svar utlöser (samma mönster som intervju.py:s FOLJDREGLER; JS:s \b är ASCII-bundet, vilket
- * kan ge små skillnader vid ord som börjar eller slutar på å/ä/ö — Digitalas import räknar om reglerna). */
-export function utlosta(text: string): { regel: BankRegel; traff: string }[] {
-  const ut: { regel: BankRegel; traff: string }[] = [];
+/** Följdregler som ett svar utlöser eller nämner med negation (samma mönster och satsregel som intervju.py:s
+ * FOLJDREGLER och NEGATION; JS:s \b är ASCII-bundet, vilket kan ge små skillnader vid ord som börjar eller slutar på
+ * å/ä/ö — Digitalas import räknar om reglerna genom intervju.py). */
+export function utlosta(text: string): { regel: BankRegel; traff: string; negerad: boolean; sats: string }[] {
+  const ut: { regel: BankRegel; traff: string; negerad: boolean; sats: string }[] = [];
   for (const r of REGLER) {
     const m = r.rx.exec(text);
-    if (m) ut.push({ regel: r, traff: m[0] });
+    if (!m) continue;
+    let negerad = false;
+    let sats = '';
+    if (NEGATION && BANK.negation) {
+      const fore = text.slice(Math.max(0, m.index - BANK.negation.fonster), m.index);
+      const delar = fore.split(new RegExp(BANK.negation.satsgrans));
+      sats = delar[delar.length - 1];
+      negerad = NEGATION.test(sats);
+      sats = (sats + m[0]).trim().slice(-80);
+    }
+    ut.push({ regel: r, traff: m[0], negerad, sats });
   }
   return ut;
 }

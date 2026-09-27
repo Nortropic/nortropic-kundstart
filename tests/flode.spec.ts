@@ -31,16 +31,18 @@ test.describe('Kundstart – två testdialoger, återupptagning, rättelse, mate
     await page.context().clearCookies();
     await oppna(page, b.lank);
     const g1 = await aktuellFraga(page);
-    // Ett rent informationsbehov, uttryckt utan bokningsord (bankens följdregler är ordbaserade och ser inte negationer)
-    await svara(page, 'Vi vill bara att folk ska hitta våra öppettider och adress och förstå vad vi gör. Folk ringer oss om de vill något.');
+    // Ett rent informationsbehov som nämner bokning med negation: bankens NEGATION-regel (samma sats, 40 tecken) ska
+    // bokföra träffen som negerad i stället för att utlösa bokningsfrågor
+    await svara(page, 'Vi vill bara att folk ska hitta våra öppettider och adress och förstå vad vi gör. Inga bokningar via nätet, folk ringer.');
     let forraB = g1;
     for (let i = 0; i < 4; i++) {
       const f = await vantaPaNyFraga(page, forraB);
       forraB = f;
       await svara(page, 'Det är mest privatpersoner i närområdet som hör av sig.');
     }
-    const exB = (await (await request.get(`${bas}/api/intern/arenden/${b.arende_id}/export`, { headers: internHuvud() })).json()) as { omgangar: { fragor: { id: string }[] }[]; foljdregler_utlosta: { regel: string }[] };
+    const exB = (await (await request.get(`${bas}/api/intern/arenden/${b.arende_id}/export`, { headers: internHuvud() })).json()) as { omgangar: { fragor: { id: string }[] }[]; foljdregler_utlosta: { regel: string }[]; foljdregler_negerade: { regel: string; sats: string }[] };
     expect(exB.foljdregler_utlosta.some((r) => r.regel === 'bokning'), 'ett informationsbehov ska inte utlösa bokningsregeln').toBe(false);
+    expect(exB.foljdregler_negerade.some((r) => r.regel === 'bokning'), 'den negerade nämningen bokförs som negerad').toBe(true);
     expect(exB.omgangar.flatMap((o) => o.fragor).some((f) => /^BOK/.test(f.id)), 'inga BOK-följdfrågor för ett informationsbehov').toBe(false);
 
     // Export: kundens ord ordagrant, kanal, testdialog, inga hemligheter

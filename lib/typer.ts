@@ -119,6 +119,7 @@ export interface Arende {
   fakta_ai: FaktaAi[];
   material: Material[];
   foljdregler_utlosta: { regel: string; fraga_id: string; traff: string; tid: string }[];
+  foljdregler_negerade?: { regel: string; fraga_id: string; traff: string; sats: string; tid: string }[];
   ai: AiTillstand;
   omgang: number;
   inlamningar: Inlamning[];
