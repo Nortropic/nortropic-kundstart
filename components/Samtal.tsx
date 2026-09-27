@@ -27,7 +27,6 @@ export default function Samtal({ vy, setVy, gaTill }: { vy: Vy; setVy: (v: Vy) =
       setMeddelande(r.ai.anvand ? r.meddelande : '');
       setAiNot(r.ai.fallback ? 'AI-stödet nåddes inte just nu, så nästa fråga följer vår standardlista. Era svar är sparade.' : '');
       setSparat('');
-      setTimeout(() => fragaRef.current?.focus(), 50);
     } catch (e) {
       setHamtFel((e as AnropsFel).message);
     } finally {
@@ -39,6 +38,17 @@ export default function Samtal({ vy, setVy, gaTill }: { vy: Vy; setVy: (v: Vy) =
   useEffect(() => {
     if (vy.oppna.length === 0 && !vy.klar && !vy.arende.inlamnad && !hamtarRef.current) void hamtaNasta();
   }, [vy.oppna.length, vy.klar, vy.arende.inlamnad, hamtaNasta]);
+
+  // Ny fråga på plats: flytta fokus till rubriken (skärmläsare och tangentbord), men inte vid första renderingen.
+  const forstaFragaId = vy.oppna[0]?.id;
+  const forstaRendering = useRef(true);
+  useEffect(() => {
+    if (forstaRendering.current) {
+      forstaRendering.current = false;
+      return;
+    }
+    if (forstaFragaId) fragaRef.current?.focus();
+  }, [forstaFragaId]);
 
   async function lamnaIn() {
     setInlamnar(true);

@@ -116,7 +116,7 @@ test.describe('Kundstart – två testdialoger, återupptagning, rättelse, mate
     await expect(rad.locator('.ursprung')).toContainText('Ni uppgav detta');
     const ex = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as { rattelser: { nyckel: string; varde: string; tidigare: { typ: string } }[]; rattelser_fakta: { status: string; kalla: string }[] };
     expect(ex.rattelser[0].nyckel).toBe('erbjudande');
-    expect(ex.rattelser[0].tidigare.typ).toBe('forifylld');
+    expect(ex.rattelser[0].tidigare.typ).toBe('forifylld'); // AI-stödet får inte skriva om en orörd förifylld uppgift som sin tolkning
     expect(ex.rattelser_fakta[0].status).toBe('kunden uppger');
     // Samtalet fortsätter där det var
     await page.getByRole('tab', { name: 'Samtal' }).click();

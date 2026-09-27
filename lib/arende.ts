@@ -377,7 +377,10 @@ export async function nasta(id: string): Promise<NastaResultat> {
       a.fragor.push({ id: kand.id, omrade: kand.omrade, nyckel: kand.nyckel, text: kand.text, paverkar: kand.paverkar, utlost_av: kand.utlost_av ?? null, kalla: 'bank', typ: 'oppen', omgang: a.omgang, stalld: nu(), status: 'tackt', valjare: 'ai' });
       a.fakta_ai.push({ nyckel: kand.nyckel, varde: t.varde, status: 'tolkning', kalla: kalla + ' täckt av svar', omrade: kand.omrade, datum: nu().slice(0, 10), bas_revision: basRevision, giltig: true, modell: res.modell });
     }
+    // Kundens egna nycklar i samtalet: en förifylld uppgift som kunden inte rört får inte skrivas om som "vår tolkning".
+    const kundensNycklar = new Set([...a.svar.map((x) => x.nyckel), ...a.rattelser.map((x) => x.nyckel), ...ut.tackta.map((t) => kNu.get(t.fraga_id)?.nyckel).filter(Boolean)]);
     for (const b of ut.bild) {
+      if (a.fakta_forifyllda.some((f) => f.nyckel === b.nyckel) && !kundensNycklar.has(b.nyckel)) continue;
       if (senareRattat.has(b.nyckel)) {
         a.fakta_ai.push({ nyckel: b.nyckel, varde: b.varde, status: 'tolkning', kalla, omrade: kNu.get(b.nyckel)?.omrade || '', datum: nu().slice(0, 10), bas_revision: basRevision, giltig: false, forkastad_skal: 'kundens rättelse efter revision ' + basRevision, modell: res.modell });
         continue;
