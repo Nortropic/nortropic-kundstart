@@ -82,13 +82,28 @@ test.describe('Kundstart – två testdialoger, återupptagning, rättelse, mate
     const flik2 = await page.context().newPage();
     await flik2.goto(bas + '/samtal');
     await expect(flik2.locator('h2.fragetext').first()).toHaveText(f2);
+    const fragaId2 = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}`, { headers: internHuvud() })).json()).vy.oppna[0].id as string;
     await svara(page, 'Svar från flik ett');
+    // Flik två svarar på samma fråga med en annan text: ett ändrat svar, ingen dubblett; samma text igen: ingen ny rad
     await flik2.locator('textarea.svar-falt').first().fill('Svar från flik två');
     await flik2.getByRole('button', { name: 'Spara svar' }).first().click();
     await expect(flik2.locator('.status.sparat, .not.fel').first()).toBeVisible({ timeout: 20_000 });
-    const lage2 = await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}`, { headers: internHuvud() })).json();
-    const oppna2 = lage2.vy.oppna as { id: string }[];
-    expect(new Set(oppna2.map((o) => o.id)).size).toBe(oppna2.length);
+    const svarTvaFlikar = (await hamtaSomSida(flik2, bas + '/api/lage')).text; // bara för att visa att fliken lever
+    expect(svarTvaFlikar.length).toBeGreaterThan(0);
+    const ex2 = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as { svar: { fraga_id: string; text: string; ersatter?: number }[] };
+    const svarF2 = ex2.svar.filter((x) => x.fraga_id === fragaId2);
+    expect(svarF2.map((x) => x.text)).toEqual(['Svar från flik ett', 'Svar från flik två']);
+    expect(svarF2[1].ersatter).toBeDefined();
+    const igen = await flik2.evaluate(async (fid) => (await fetch('/api/svar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fraga_id: fid, text: 'Svar från flik två', typ: 'text', idempotens: 'nyckel-' + Math.random().toString(16).slice(2, 12) }) })).json(), fragaId2);
+    expect((igen as { ny: boolean }).ny).toBe(false);
+    const vetInteId = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}`, { headers: internHuvud() })).json()).vy.oppna[0]?.id as string | undefined;
+    if (vetInteId) {
+      for (let i = 0; i < 2; i++) await flik2.evaluate(async (fid) => fetch('/api/svar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fraga_id: fid, text: '', typ: 'vet_inte', idempotens: 'vetinte-' + fid + '-samma' }) }), vetInteId);
+      await flik2.evaluate(async (fid) => fetch('/api/svar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fraga_id: fid, text: '', typ: 'vet_inte', idempotens: 'vetinte-' + fid + '-annan' }) }), vetInteId);
+    }
+    const ex3 = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as { svar: { fraga_id: string; text: string }[] };
+    expect(ex3.svar.filter((x) => x.fraga_id === fragaId2).length).toBe(2);
+    if (vetInteId) expect(ex3.svar.filter((x) => x.fraga_id === vetInteId).length, 'tre Vet inte-anrop ger en rad').toBe(1);
     await flik2.close();
     // Ny enhet: samma länk i ny kontext ger samma ärende och svar
     const ctx2 = await browser.newContext();
@@ -114,8 +129,20 @@ test.describe('Kundstart – två testdialoger, återupptagning, rättelse, mate
     await rad.getByRole('button', { name: 'Spara rättelse' }).click();
     await expect(rad.locator('.varde')).toHaveText('Klippning och färgning. Skäggtrimning har vi slutat med.');
     await expect(rad.locator('.ursprung')).toContainText('Ni uppgav detta');
+    // En andra rättelse av samma uppgift sparas också (ny nyckel per handling); samma värde igen ger tydligt besked
+    await rad.getByRole('button', { name: 'Ändra' }).click();
+    await rad.locator('textarea.ratt-falt').fill('Bara klippning numera.');
+    await rad.getByRole('button', { name: 'Spara rättelse' }).click();
+    await expect(rad.locator('.varde')).toHaveText('Bara klippning numera.');
+    // Samma värde igen: knappen är avstängd i gränssnittet, och servern sparar ingen ny rad om anropet ändå görs
+    await rad.getByRole('button', { name: 'Ändra' }).click();
+    await rad.locator('textarea.ratt-falt').fill('Bara klippning numera. ');
+    await expect(rad.getByRole('button', { name: 'Spara rättelse' })).toBeDisabled();
+    await rad.getByRole('button', { name: 'Avbryt' }).click();
+    const samma = await page.evaluate(async () => (await fetch('/api/rattelse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nyckel: 'erbjudande', varde: 'Bara klippning numera.', idempotens: 'ratt-' + Math.random().toString(16).slice(2, 12) }) })).json());
+    expect((samma as { ny: boolean }).ny).toBe(false);
     const ex = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as { rattelser: { nyckel: string; varde: string; tidigare: { typ: string } }[]; rattelser_fakta: { status: string; kalla: string }[] };
-    expect(ex.rattelser[0].nyckel).toBe('erbjudande');
+    expect(ex.rattelser.map((r) => r.varde)).toEqual(['Klippning och färgning. Skäggtrimning har vi slutat med.', 'Bara klippning numera.']);
     expect(ex.rattelser[0].tidigare.typ).toBe('forifylld'); // AI-stödet får inte skriva om en orörd förifylld uppgift som sin tolkning
     expect(ex.rattelser_fakta[0].status).toBe('kunden uppger');
     // Samtalet fortsätter där det var

@@ -6,7 +6,7 @@ import { aktuellFraga, internHuvud, oppna, skapaArende, svara, vantaPaNyFraga } 
 const LAGE = process.env.KUNDSTART_AI || 'regelstyrd';
 test.skip(LAGE === 'regelstyrd', 'kräver KUNDSTART_AI=gateway eller claude-cli');
 
-test(`verkligt AI-anrop (${LAGE}) väljer nästa fråga, täcker redan besvarat och syns i exporten`, async ({ page, request, baseURL }) => {
+test(`verkligt AI-anrop (${LAGE}) väljer nästa fråga och syns som sådant i exporten`, async ({ page, request, baseURL }) => {
   const bas = baseURL!;
   const a = await skapaArende(request, bas, 'Testfirma AI ' + LAGE, undefined, { ai: LAGE });
   await oppna(page, a.lank);
@@ -27,7 +27,8 @@ test(`verkligt AI-anrop (${LAGE}) väljer nästa fråga, täcker redan besvarat 
   expect(lyckade.length, 'minst ett anrop utan fallback: ' + JSON.stringify(nasta.map((h) => h.detaljer))).toBeGreaterThanOrEqual(1);
   const fragor = ex.omgangar.flatMap((o) => o.fragor);
   expect(fragor.some((f) => f.valjare === 'ai'), 'en fråga valdes av modellen').toBe(true);
-  // Modellens tolkningar är egna rader med status tolkning, aldrig kundens ord
+  // Modellens tolkningar (om några) är egna rader med status tolkning, aldrig kundens ord; ett verkligt val av fråga är kravet
   for (const f of ex.fakta_ai) expect(f.status).toBe('tolkning');
+  expect(lyckade.some((h) => (h.detaljer?.valda || []).length > 0), 'modellen valde minst en fråga').toBe(true);
   console.log('AI-prov:', JSON.stringify({ lage: ex.ai.lage, modell: ex.ai.modell, anrop: ex.ai.anrop, fel: ex.ai.fel, tackta: nasta.map((h) => h.detaljer?.tackta), valda: nasta.map((h) => h.detaljer?.valda), fakta_ai: ex.fakta_ai.map((x) => x.nyckel) }));
 });

@@ -27,12 +27,19 @@ Läst mot Vercels dokumentation 2026-09-27 (AI Gateway pricing/authentication/OI
 
 - Länk: 256 bitar, hash i lagret, giltig 30 dagar (styrbart), återkallbar; kakan signerad, httpOnly, 30 dagar; alla
   kund-API:er kräver giltig kaka *och* giltig länk vid varje anrop.
-- AI: högst `KUNDSTART_AI_MAX_ANROP` anrop per ärende; efter tre fel i rad pausas AI-stödet i tio minuter (regelstyrd
-  väg tar över, kunden ser det); anrop tar högst 30 s; modellens svar valideras mot kandidatlistan och längdgränser.
-  Fri text från kunden startar aldrig research, verktygsloopar eller webbhämtning.
+- AI: högst `KUNDSTART_AI_MAX_ANROP` anrop per ärende; efter tre fel i rad (räknaren nollställs vid lyckat anrop)
+  pausas AI-stödet i tio minuter (regelstyrd väg tar över, kunden ser det); anrop tar högst 30 s; modellens svar
+  valideras mot kandidatlistan och längdgränser. Fri text från kunden startar aldrig research, verktygsloopar eller
+  webbhämtning. Sidfoten visar den modell som senast svarade.
 - Svar: högst 4 000 tecken; texter som ser ut som lösenord eller nycklar vägras och sparas inte.
-- Material: 4 MB per fil, 25 filer, 40 MB per ärende, typ ur innehållet; SVG med skript vägras; nedladdning bara genom
-  funktionen med `Content-Disposition: attachment`.
+- Material: 4 MB per fil, 25 filer, 40 MB per ärende, högst 50 poster inklusive länkar, typ ur innehållet; SVG med
+  skript vägras; nedladdning bara genom funktionen med `Content-Disposition: attachment`. Länkar sparas som text och
+  hämtas aldrig av tjänsten; ansvaret för interna adresser och metadata-endpoints ligger i Digitalas researchväg
+  (Runtimes sandlådade profiler), inte här.
+- Dubbla svar: samma text igen på samma fråga (annan flik, återförsök) ger ingen ny rad; annan text på en redan besvarad
+  fråga blir ett ändrat svar som ersätter det förra synligt. En rättelse i Vår bild får en ny idempotensnyckel per öppnat
+  fält; samma värde igen ger beskedet "Ingen ändring sparades".
+- CSP tillåter `script-src 'unsafe-inline'` (Next.js utan nonce); en nonce-lösning bör in före skarp kunddrift.
 - Plattform: Vercels Deployment Protection (Vercel Authentication) på förhandsvisningen; Vercel WAF/rate limiting
   kan läggas till per projekt i dashboarden (inte gjort; ingen kund är inbjuden).
 

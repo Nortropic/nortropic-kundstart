@@ -15,7 +15,7 @@ export interface FragaVy {
   valjare: 'regelstyrd' | 'ai';
 }
 
-export interface DialogRad { fraga_id: string; fraga: string; svar: string; typ: string; tid: string; nyckel: string }
+export interface DialogRad { fraga_id: string; fraga: string; svar: string; typ: string; tid: string; nyckel: string; andrad: number }
 
 export interface MaterialVy { id: string; typ: 'fil' | 'lank'; filnamn?: string; mime?: string; storlek?: number; url?: string; beskrivning?: string; mottaget: string }
 
@@ -50,7 +50,7 @@ export function tillVy(a: Arende): Vy {
     ai: { lage: a.ai.lage, modell: a.ai.lage === 'regelstyrd' ? undefined : a.ai.modell, anrop: a.ai.anrop },
     oppna,
     senare: a.fragor.filter((f) => f.status === 'senare').map(fragaVy),
-    dialog: a.svar.map((s) => ({ fraga_id: s.fraga_id, fraga: fragaText.get(s.fraga_id) || s.fraga_id, svar: s.text, typ: s.typ, tid: s.mottaget, nyckel: s.nyckel })),
+    dialog: [...new Map(a.svar.map((s) => [s.fraga_id, s])).values()].map((s) => ({ fraga_id: s.fraga_id, fraga: fragaText.get(s.fraga_id) || s.fraga_id, svar: s.text, typ: s.typ, tid: s.mottaget, nyckel: s.nyckel, andrad: a.svar.filter((x) => x.fraga_id === s.fraga_id).length - 1 })),
     bild: bild(a),
     material: a.material.filter((m) => m.status === 'mottagen').map((m) => ({ id: m.id, typ: m.typ, filnamn: m.filnamn, mime: m.mime, storlek: m.storlek, url: m.url, beskrivning: m.beskrivning, mottaget: m.mottaget })),
     aterstar: kvar,

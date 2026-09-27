@@ -47,6 +47,7 @@ export interface Svar {
   mottaget: string;
   revision: number;
   idempotens: string;
+  ersatter?: number;
 }
 
 export interface Rattelse {
@@ -90,8 +91,10 @@ export interface AiTillstand {
   tokens_in: number;
   tokens_out: number;
   fel: number;
+  fel_i_rad?: number;
   senaste_fel?: string;
   senaste_fel_tid?: string;
+  senaste_lyckade?: string;
   paus_till?: string;
 }
 

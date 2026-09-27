@@ -101,7 +101,7 @@ export default function Samtal({ vy, setVy, gaTill }: { vy: Vy; setVy: (v: Vy) =
             {vy.dialog.map((d, i) => (
               <li key={d.fraga_id + i}>
                 <p className="fraga">{d.fraga}</p>
-                <p className={'svar' + (d.typ === 'vet_inte' ? ' vet-inte' : '')}>{d.svar}</p>
+                <p className={'svar' + (d.typ === 'vet_inte' ? ' vet-inte' : '')}>{d.svar}{d.andrad > 0 ? <span className="tyst liten"> (ändrat)</span> : null}</p>
               </li>
             ))}
           </ol>
@@ -154,6 +154,7 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
   const [val, setVal] = useState('');
   const [lage, setLage] = useState<'tom' | 'osparad' | 'sparar' | 'sparat' | 'fel'>('tom');
   const [fel, setFel] = useState('');
+  const [senasteTyp, setSenasteTyp] = useState<'text' | 'vet_inte' | 'val'>('text');
 
   useEffect(() => {
     const u = lasUtkast(nyckel);
@@ -174,14 +175,19 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
 
   async function skicka(typ: 'text' | 'vet_inte' | 'val') {
     if (lage === 'sparar') return;
+    setSenasteTyp(typ);
     const innehall = typ === 'val' ? val : text;
     if (typ !== 'vet_inte' && !innehall.trim()) return;
+    // En nyckel per fråga och försök: samma nyckel vid återförsök, så ett återförsök eller dubbelklick aldrig ger två rader.
     const id = idempotens || nyNyckel();
-    setIdempotens(id);
+    if (!idempotens) {
+      setIdempotens(id);
+      sparaUtkast(nyckel, { text, idempotens: id });
+    }
     setLage('sparar');
     setFel('');
     try {
-      const r = await anropa<SvarSvar>('/api/svar', { method: 'POST', body: JSON.stringify({ fraga_id: fraga.id, text: innehall, typ, idempotens: typ === 'vet_inte' ? nyNyckel() : id }) });
+      const r = await anropa<SvarSvar>('/api/svar', { method: 'POST', body: JSON.stringify({ fraga_id: fraga.id, text: innehall, typ, idempotens: id }) });
       sparaUtkast(nyckel, null);
       setLage('sparat');
       onSparat(r.vy, klockslag(r.sparat));
@@ -196,7 +202,7 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
   async function senare() {
     try {
       const r = await anropa<{ ok: true; vy: Vy }>('/api/senare', { method: 'POST', body: JSON.stringify({ fraga_id: fraga.id }) });
-      sparaUtkast(nyckel, null);
+      // utkastet ligger kvar i sessionStorage tills fliken stängs, så text kunden skrivit inte kastas
       onSparat(r.vy, '');
     } catch (e) {
       setLage('fel');
@@ -228,7 +234,7 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
       <p className={'status ' + lage} role="status" aria-live="polite">{statusText}</p>
       {fel && (
         <p className="not fel" role="alert">
-          {fel} <button type="button" className="knapp lank" onClick={() => void skicka('text')}>Försök igen</button>
+          {fel} <button type="button" className="knapp lank" onClick={() => void skicka(senasteTyp)}>Försök igen</button>
         </p>
       )}
     </div>

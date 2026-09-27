@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { AnropsFel, anropa, klockslag, nyNyckel } from '@/lib/klient';
+import { AnropsFel, anropa, klockslag, lasUtkast, nyNyckel, sparaUtkast } from '@/lib/klient';
 import type { Vy } from '@/lib/vy';
 import type { BildRad } from '@/lib/arende';
 
@@ -50,17 +50,34 @@ export default function Bild({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void }) 
 }
 
 function Rad({ rad, setVy }: { rad: BildRad; setVy: (v: Vy) => void }) {
+  const utkastNyckel = 'rattelse:' + rad.nyckel;
   const [oppen, setOppen] = useState(false);
   const [text, setText] = useState(rad.varde);
-  const [idempotens] = useState(() => nyNyckel());
-  const [lage, setLage] = useState<'' | 'sparar' | 'fel'>('');
+  const [idempotens, setIdempotens] = useState('');
+  const [lage, setLage] = useState<'' | 'sparar' | 'fel' | 'ingen'>('');
   const [fel, setFel] = useState('');
+  function oppna() {
+    const u = lasUtkast(utkastNyckel);
+    setText(u?.text || rad.varde);
+    setIdempotens(u?.idempotens || nyNyckel()); // ny nyckel per öppnat fält: varje rättelse är en egen handling
+    setLage('');
+    setOppen(true);
+  }
+  function andra(t: string) {
+    setText(t);
+    sparaUtkast(utkastNyckel, { text: t, idempotens });
+  }
   async function spara() {
     setLage('sparar');
     setFel('');
     try {
-      const r = await anropa<{ ok: true; vy: Vy }>('/api/rattelse', { method: 'POST', body: JSON.stringify({ nyckel: rad.nyckel, varde: text, idempotens }) });
+      const r = await anropa<{ ok: true; ny: boolean; vy: Vy }>('/api/rattelse', { method: 'POST', body: JSON.stringify({ nyckel: rad.nyckel, varde: text, idempotens }) });
       setVy(r.vy);
+      if (!r.ny) {
+        setLage('ingen'); // servern sparade ingen ändring (samma värde som förut): fältet står kvar
+        return;
+      }
+      sparaUtkast(utkastNyckel, null);
       setOppen(false);
       setLage('');
     } catch (e) {
@@ -76,16 +93,17 @@ function Rad({ rad, setVy }: { rad: BildRad; setVy: (v: Vy) => void }) {
       <span className={'ursprung' + (rad.typ === 'ai' ? ' ai' : '')}>{ursprung}</span>
       {!oppen ? (
         <div className="rattning">
-          <button type="button" className="knapp lank" onClick={() => { setText(rad.varde); setOppen(true); }}>Ändra</button>
+          <button type="button" className="knapp lank" onClick={oppna}>Ändra</button>
         </div>
       ) : (
         <div className="rattning">
           <label className="sr" htmlFor={'ratt-' + rad.nyckel}>Rätta {rad.rubrik}</label>
-          <textarea id={'ratt-' + rad.nyckel} className="ratt-falt" value={text} onChange={(e) => setText(e.target.value)} />
+          <textarea id={'ratt-' + rad.nyckel} className="ratt-falt" value={text} onChange={(e) => andra(e.target.value)} />
           <div className="rad">
             <button type="button" className="knapp" onClick={() => void spara()} disabled={lage === 'sparar' || !text.trim() || text.trim() === rad.varde}>{lage === 'sparar' ? 'Sparar …' : 'Spara rättelse'}</button>
             <button type="button" className="knapp lank" onClick={() => setOppen(false)}>Avbryt</button>
           </div>
+          {lage === 'ingen' && <p className="status osparad" role="status">Ingen ändring sparades: värdet är detsamma som förut.</p>}
           {fel && <p className="not fel" role="alert">{fel}</p>}
         </div>
       )}

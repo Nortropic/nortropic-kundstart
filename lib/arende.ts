@@ -18,7 +18,7 @@ export class Vagrad extends Error {
 
 const MAX_AI_ANROP = Number(process.env.KUNDSTART_AI_MAX_ANROP || 60);
 const MAX_SVAR_TECKEN = 4000;
-const MIN_MS_MELLAN_SVAR = 500;
+const MIN_MS_MELLAN_SVAR = 2000; // tidsstämplar har sekundupplösning; idempotensnyckeln är det egentliga skyddet
 const PAUS_EFTER_FEL = 3;
 const PAUS_MIN = 10;
 
@@ -165,14 +165,15 @@ export function bild(a: Arende): BildRad[] {
     if (!f.giltig) continue;
     rader.set(f.nyckel, { nyckel: f.nyckel, rubrik: rubrik(f.nyckel), omrade: f.omrade, varde: f.varde, typ: 'ai', status: f.status, kalla: f.kalla, tid: f.datum });
   }
-  const senasteKund = new Map<string, { varde: string; tid: string; fraga_id?: string; kalla: string }>();
+  const senasteKund = new Map<string, { varde: string; tid: string; revision: number; fraga_id?: string; kalla: string }>();
   for (const s of a.svar) {
     if (s.typ === 'vet_inte') continue;
-    senasteKund.set(s.nyckel, { varde: s.text, tid: s.mottaget, fraga_id: s.fraga_id, kalla: 'kundens svar ' + s.fraga_id });
+    const b = senasteKund.get(s.nyckel);
+    if (!b || b.revision <= s.revision) senasteKund.set(s.nyckel, { varde: s.text, tid: s.mottaget, revision: s.revision, fraga_id: s.fraga_id, kalla: 'kundens svar ' + s.fraga_id });
   }
   for (const r of a.rattelser) {
     const b = senasteKund.get(r.nyckel);
-    if (!b || b.tid <= r.mottaget) senasteKund.set(r.nyckel, { varde: r.varde, tid: r.mottaget, kalla: 'kundens rättelse' });
+    if (!b || b.revision <= r.revision) senasteKund.set(r.nyckel, { varde: r.varde, tid: r.mottaget, revision: r.revision, kalla: 'kundens rättelse' });
   }
   for (const [nyckel, k] of senasteKund) {
     const omrade = rader.get(nyckel)?.omrade || a.fragor.find((f) => f.nyckel === nyckel)?.omrade || '';
@@ -234,10 +235,13 @@ export async function registreraSvar(id: string, p: { fraga_id: string; text: st
     const f = a.fragor.find((x) => x.id === p.fraga_id);
     if (!f) throw new Vagrad('frågan finns inte i ärendet', 404);
     if (f.typ === 'val' && p.typ === 'val' && !(f.alternativ || []).includes(text)) throw new Vagrad('okänt alternativ');
-    const sista = a.svar[a.svar.length - 1];
-    if (sista && Date.now() - new Date(sista.mottaget).getTime() < MIN_MS_MELLAN_SVAR && sista.fraga_id === p.fraga_id && sista.text === text) return null;
+    const tidigare = [...a.svar].reverse().find((x) => x.fraga_id === f.id);
+    // Samma text igen (annan flik, återförsök, dubbelklick med ny nyckel): ingen ny rad. Annan text på en redan
+    // besvarad fråga: ett ändrat svar som ersätter det förra synligt, aldrig en dubblett.
+    if (tidigare && tidigare.text === text && tidigare.typ === p.typ) return null;
+    if (tidigare && Date.now() - new Date(tidigare.mottaget).getTime() < MIN_MS_MELLAN_SVAR && tidigare.text === text) return null;
     bump(a);
-    const s: Svar = { fraga_id: f.id, nyckel: f.nyckel, omrade: f.omrade, text, typ: p.typ, mottaget: nu(), revision: a.revision, idempotens: p.idempotens };
+    const s: Svar = { fraga_id: f.id, nyckel: f.nyckel, omrade: f.omrade, text, typ: p.typ, mottaget: nu(), revision: a.revision, idempotens: p.idempotens, ersatter: tidigare ? tidigare.revision : undefined };
     a.svar.push(s);
     f.status = 'besvarad';
     for (const t of a.fakta_ai) if (t.nyckel === f.nyckel && t.giltig) { t.giltig = false; t.forkastad_skal = 'kundens senare svar ' + f.id; }
@@ -359,12 +363,19 @@ export async function nasta(id: string): Promise<NastaResultat> {
       a.ai.anrop += 1;
       a.ai.tokens_in += res.tokens_in;
       a.ai.tokens_out += res.tokens_out;
-      a.ai.modell = res.modell;
       if (res.fel) {
         a.ai.fel += 1;
+        a.ai.fel_i_rad = (a.ai.fel_i_rad || 0) + 1;
         a.ai.senaste_fel = res.fel;
         a.ai.senaste_fel_tid = nu();
-        if (a.ai.fel % PAUS_EFTER_FEL === 0) a.ai.paus_till = new Date(Date.now() + PAUS_MIN * 60_000).toISOString();
+        if (a.ai.fel_i_rad >= PAUS_EFTER_FEL) {
+          a.ai.paus_till = new Date(Date.now() + PAUS_MIN * 60_000).toISOString();
+          a.ai.fel_i_rad = 0;
+        }
+      } else {
+        a.ai.fel_i_rad = 0;
+        a.ai.modell = res.modell; // modellen som faktiskt svarade
+        a.ai.senaste_lyckade = nu();
       }
     }
     const kNu = new Map(kandidater(a).map((x) => [x.id, x]));
