@@ -33,14 +33,15 @@ export default function Material({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void
       form.append('idempotens', nyNyckel());
       setStatus(`Laddar upp ${fil.name} …`);
       try {
-        const r = await anropa<{ ok: true; vy: Vy }>('/api/material', { method: 'POST', body: form });
+        const r = await anropa<{ ok: true; ny: boolean; vy: Vy }>('/api/material', { method: 'POST', body: form });
         setVy(r.vy);
-        antal += 1;
+        if (r.ny) antal += 1;
+        else setStatus(`${fil.name} fanns redan (samma innehåll); ingen kopia lades till.`);
       } catch (err) {
         setFel((err as AnropsFel).message);
       }
     }
-    setStatus(antal ? `${antal} ${antal === 1 ? 'fil mottagen' : 'filer mottagna'} och sparad${antal === 1 ? '' : 'e'} hos oss.` : '');
+    if (antal) setStatus(`${antal} ${antal === 1 ? 'fil mottagen' : 'filer mottagna'} och sparad${antal === 1 ? '' : 'e'} hos oss.`);
     setLage(fel ? 'fel' : '');
     setBeskrivning('');
     if (filRef.current) filRef.current.value = '';

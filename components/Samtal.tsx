@@ -190,7 +190,8 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
       const r = await anropa<SvarSvar>('/api/svar', { method: 'POST', body: JSON.stringify({ fraga_id: fraga.id, text: innehall, typ, idempotens: id }) });
       sparaUtkast(nyckel, null);
       setLage('sparat');
-      onSparat(r.vy, klockslag(r.sparat));
+      // ny:false = svaret var redan sparat (samma nyckel eller samma text): vyn från servern gäller, inget tappas
+      onSparat(r.vy, r.ny ? klockslag(r.sparat) : 'tidigare');
     } catch (e) {
       const f = e as AnropsFel;
       setLage('fel');

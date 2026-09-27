@@ -73,7 +73,7 @@ export function sakertFilnamn(namn: string): string {
 export function rimligLank(url: string): boolean {
   try {
     const u = new URL(url);
-    return (u.protocol === 'https:' || u.protocol === 'http:') && u.hostname.includes('.') && url.length <= 500;
+    return u.protocol === 'https:' && u.hostname.includes('.') && url.length <= 500;
   } catch {
     return false;
   }

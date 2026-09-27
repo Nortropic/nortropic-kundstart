@@ -33,7 +33,8 @@ Digitala (kundmappen, INTERVJU.json)  ◀── verktyg/kundstart.py hamta ─�
   data mot kandidatlistan; allt valideras på servern, ogiltiga svar faller tillbaka till den regelstyrda vägen. Ingen
   HTML eller kod från modellen körs hos kunden.
 - **Lagring** (`lib/lagring.ts`): privata JSON-dokument och filer i Vercel Blob (region Stockholm), villkorad skrivning
-  med ETag och omförsök; idempotensnycklar gör omladdning, dubbelklick, två flikar och återförsök ofarliga.
+  med ETag och omförsök; idempotensnycklar och innehållsregler (samma text på samma fråga, samma fil enligt sha256)
+  gör omladdning, dubbelklick, två flikar och återförsök ofarliga.
 - **Åtkomst** (`lib/atkomst.ts`): 256 bitars länknyckel i URL-fragmentet (`/start#…`, når aldrig serverloggar), bara
   hashen lagras; första besöket byter nyckeln mot en signerad httpOnly-kaka (30 dagar); länken kan gå ut och återkallas
   från Digitala; ett synligt ärende-id är aldrig behörighet. Intern nyckel (Bearer) för Digitalas verktyg.

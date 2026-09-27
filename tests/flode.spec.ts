@@ -96,14 +96,13 @@ test.describe('Kundstart – två testdialoger, återupptagning, rättelse, mate
     expect(svarF2[1].ersatter).toBeDefined();
     const igen = await flik2.evaluate(async (fid) => (await fetch('/api/svar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fraga_id: fid, text: 'Svar från flik två', typ: 'text', idempotens: 'nyckel-' + Math.random().toString(16).slice(2, 12) }) })).json(), fragaId2);
     expect((igen as { ny: boolean }).ny).toBe(false);
-    const vetInteId = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}`, { headers: internHuvud() })).json()).vy.oppna[0]?.id as string | undefined;
-    if (vetInteId) {
-      for (let i = 0; i < 2; i++) await flik2.evaluate(async (fid) => fetch('/api/svar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fraga_id: fid, text: '', typ: 'vet_inte', idempotens: 'vetinte-' + fid + '-samma' }) }), vetInteId);
-      await flik2.evaluate(async (fid) => fetch('/api/svar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fraga_id: fid, text: '', typ: 'vet_inte', idempotens: 'vetinte-' + fid + '-annan' }) }), vetInteId);
-    }
+    await expect(flik2.locator('h2.fragetext').first()).toBeVisible({ timeout: 60_000 });
+    const vetInteId = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}`, { headers: internHuvud() })).json()).vy.oppna[0].id as string;
+    for (let i = 0; i < 2; i++) await flik2.evaluate(async (fid) => fetch('/api/svar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fraga_id: fid, text: '', typ: 'vet_inte', idempotens: 'vetinte-' + fid + '-samma' }) }), vetInteId);
+    await flik2.evaluate(async (fid) => fetch('/api/svar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fraga_id: fid, text: '', typ: 'vet_inte', idempotens: 'vetinte-' + fid + '-annan' }) }), vetInteId);
     const ex3 = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as { svar: { fraga_id: string; text: string }[] };
     expect(ex3.svar.filter((x) => x.fraga_id === fragaId2).length).toBe(2);
-    if (vetInteId) expect(ex3.svar.filter((x) => x.fraga_id === vetInteId).length, 'tre Vet inte-anrop ger en rad').toBe(1);
+    expect(ex3.svar.filter((x) => x.fraga_id === vetInteId).length, 'tre Vet inte-anrop ger en rad').toBe(1);
     await flik2.close();
     // Ny enhet: samma länk i ny kontext ger samma ärende och svar
     const ctx2 = await browser.newContext();
@@ -158,6 +157,10 @@ test.describe('Kundstart – två testdialoger, återupptagning, rättelse, mate
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
     await page.locator('input[type=file]').setInputFiles({ name: 'logotyp.png', mimeType: 'image/png', buffer: png });
     await expect(page.locator('.material-lista li', { hasText: 'logotyp.png' })).toBeVisible({ timeout: 20_000 });
+    // Samma fil igen (återförsök): ingen kopia
+    await page.locator('input[type=file]').setInputFiles({ name: 'logotyp.png', mimeType: 'image/png', buffer: png });
+    await expect(page.locator('#material-status')).toContainText('fanns redan', { timeout: 20_000 });
+    await expect(page.locator('.material-lista li')).toHaveCount(1);
     // Otillåten: en körbar fil med bildändelse
     await page.locator('input[type=file]').setInputFiles({ name: 'farlig.png', mimeType: 'image/png', buffer: Buffer.from('MZ\u0000\u0000detta är inte en bild') });
     await expect(page.locator('.not.fel')).toContainText('ser inte ut som en sådan fil');

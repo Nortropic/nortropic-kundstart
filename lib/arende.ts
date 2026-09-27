@@ -167,9 +167,13 @@ export function bild(a: Arende): BildRad[] {
   }
   const senasteKund = new Map<string, { varde: string; tid: string; revision: number; fraga_id?: string; kalla: string }>();
   for (const s of a.svar) {
-    if (s.typ === 'vet_inte') continue;
     const b = senasteKund.get(s.nyckel);
-    if (!b || b.revision <= s.revision) senasteKund.set(s.nyckel, { varde: s.text, tid: s.mottaget, revision: s.revision, fraga_id: s.fraga_id, kalla: 'kundens svar ' + s.fraga_id });
+    if (b && b.revision > s.revision) continue;
+    if (s.typ === 'vet_inte') {
+      senasteKund.delete(s.nyckel); // kunden vet inte längre: det tidigare ordet står inte kvar som uppgift
+      continue;
+    }
+    senasteKund.set(s.nyckel, { varde: s.text, tid: s.mottaget, revision: s.revision, fraga_id: s.fraga_id, kalla: 'kundens svar ' + s.fraga_id });
   }
   for (const r of a.rattelser) {
     const b = senasteKund.get(r.nyckel);
@@ -303,9 +307,9 @@ export async function registreraRattelse(id: string, p: { nyckel: string; varde:
     if (a.rattelser.some((x) => x.idempotens === p.idempotens)) return null;
     const rad = bild(a).find((b) => b.nyckel === p.nyckel);
     if (!rad && !a.fragor.some((f) => f.nyckel === p.nyckel)) throw new Vagrad('uppgiften finns inte i er bild', 404);
+    if (rad && rad.varde === varde) return null;
     bump(a);
     const tidigare: Rattelse['tidigare'] = rad ? { varde: rad.varde, kalla: rad.kalla, typ: rad.typ === 'kund' ? 'svar' : rad.typ } : { varde: '', kalla: '', typ: 'ingen' };
-    if (rad && rad.varde === varde) return null;
     a.rattelser.push({ nyckel: p.nyckel, varde, mottaget: nu(), revision: a.revision, idempotens: p.idempotens, tidigare });
     for (const t of a.fakta_ai) if (t.nyckel === p.nyckel && t.giltig) { t.giltig = false; t.forkastad_skal = 'kundens rättelse'; }
     handelse(a, 'rattelse', { nyckel: p.nyckel, tidigare: tidigare.typ });
@@ -357,7 +361,8 @@ export async function nasta(id: string): Promise<NastaResultat> {
   const anvandModell = lage !== 'regelstyrd';
 
   const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
-    if (a.fragor.some((f) => f.status === 'stalld')) return null; // någon annan flik hann före
+    const annanHannFore = a.fragor.some((f) => f.status === 'stalld');
+    if (annanHannFore && !anvandModell) return null;
     bump(a);
     if (anvandModell) {
       a.ai.anrop += 1;
@@ -377,6 +382,10 @@ export async function nasta(id: string): Promise<NastaResultat> {
         a.ai.modell = res.modell; // modellen som faktiskt svarade
         a.ai.senaste_lyckade = nu();
       }
+    }
+    if (annanHannFore) {
+      handelse(a, 'nasta_forkastad', { skal: 'en annan flik hann ställa nästa fråga; anropet bokfört', lage: res.lage });
+      return a; // bara räknarna sparas; frågorna från detta anrop används inte
     }
     const kNu = new Map(kandidater(a).map((x) => [x.id, x]));
     const senareRattat = new Set([...a.rattelser.filter((x) => x.revision > basRevision).map((x) => x.nyckel), ...a.svar.filter((x) => x.revision > basRevision).map((x) => x.nyckel)]);
@@ -429,6 +438,7 @@ export async function laggMaterialFil(id: string, p: { filnamn: string; mime: st
   if (!befintlig) throw new Vagrad('ärendet finns inte', 404);
   if (befintlig.material.some((m) => m.idempotens === p.idempotens)) return { a: befintlig, ny: false };
   const aktiva = befintlig.material.filter((m) => m.status === 'mottagen' && m.typ === 'fil');
+  if (aktiva.some((m) => m.sha256 === p.sha256)) return { a: befintlig, ny: false }; // samma innehåll igen (återförsök): ingen dubblett
   if (aktiva.length >= MAX_ANTAL) throw new Vagrad(`högst ${MAX_ANTAL} filer per ärende`, 422);
   if (aktiva.reduce((s, m) => s + (m.storlek || 0), 0) + p.data.byteLength > MAX_TOTAL) throw new Vagrad('den sammanlagda storleken på filerna är för stor', 422);
   const mid = nyttId('m');

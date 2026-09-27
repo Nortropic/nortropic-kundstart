@@ -103,7 +103,7 @@ function Rad({ rad, setVy }: { rad: BildRad; setVy: (v: Vy) => void }) {
             <button type="button" className="knapp" onClick={() => void spara()} disabled={lage === 'sparar' || !text.trim() || text.trim() === rad.varde}>{lage === 'sparar' ? 'Sparar …' : 'Spara rättelse'}</button>
             <button type="button" className="knapp lank" onClick={() => setOppen(false)}>Avbryt</button>
           </div>
-          {lage === 'ingen' && <p className="status osparad" role="status">Ingen ändring sparades: värdet är detsamma som förut.</p>}
+          {lage === 'ingen' && <p className="status osparad" role="status">Ingen ny ändring sparades: värdet var redan det som står ovan.</p>}
           {fel && <p className="not fel" role="alert">{fel}</p>}
         </div>
       )}
