@@ -6,7 +6,9 @@
   "sha256": "575c6b0bf339632ebb0d6e2878cb08236fa7337d96d5aeab3bf4421111144564",
   "git_rev": "94dcb0ef54cc22d91e77e0431c29fab6d03121c4",
   "gren": "main",
-  "ren": true
+  "ren": null,
+  "ren_omfattning": "ej mätbar: exporterad fil utanför källans plats",
+  "revision_verifierad": true
  },
  "per_omgang": 8,
  "statusar": [

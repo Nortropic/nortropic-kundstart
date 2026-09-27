@@ -78,3 +78,36 @@ test('Vikskär: verklig befintlig gateway med samma GPT-5 mini och nytt schemako
   const senaste=p.handelser.filter((h:{typ:string})=>h.typ==='nasta').at(-1);
   if(senaste.detaljer.fallback){expect(p.ai.aktuell).toBe('reserv');expect(senaste.detaljer.diagnostik.some((d:{avvisade?:unknown[]})=>d.avvisade?.length)).toBe(true);await expect(page.locator('.fot')).toContainText('reservläge');}
 });
+
+test('Reviewregression: orelaterat pris/metadata bevaras och okänt behov går att följa upp', async ({page,request,baseURL},info) => {
+  const a=await skapaArende(request,baseURL!,'Vikskär reviewrättningar',[
+    {nyckel:'erbjudande',varde:'Porträtt 45 minuter, 1 800 kr',status:'kunden uppger',kalla:'äldre syntetiskt underlag',omrade:'A'},
+  ],{ai:'regelstyrd'});
+  await oppna(page,a.lank);
+  let f=await aktuellFraga(page);
+  await svara(page,'Vi menar att priset ska vara tydligt redan på startsidan. Vi arbetar med metadata och metallskyltar i metallram.');
+  await vantaPaNyFraga(page,f);
+  let paket=await (await request.get(`${baseURL}/api/intern/arenden/${a.arende_id}/export`,{headers:internHuvud()})).json();
+  expect(paket.rattelser_fakta).toHaveLength(0);
+  expect(paket.behov).toHaveLength(0);
+  f=await aktuellFraga(page);
+  await svara(page,'Vi behöver påminnelser inför porträttbesök.');
+  await vantaPaNyFraga(page,f);
+  await page.locator('.aktuell').filter({hasText:'När behövs påminnelsen'}).getByRole('button',{name:'Vet inte',exact:true}).click();
+  await expect(page.locator('.status.sparat').first()).toContainText('Sparat');
+  const details=page.locator('details').filter({hasText:'Vad som fortfarande behöver undersökas'});
+  await details.locator('summary').click();
+  await expect(details).toContainText('ni vet inte ännu');
+  await expect(details.getByRole('button',{name:'Följ upp frågan'})).toBeVisible();
+  await details.getByRole('button',{name:'Följ upp frågan'}).click();
+  const follow=page.locator('.aktuell').filter({hasText:'När behövs påminnelsen'});
+  await expect(follow).toBeVisible();
+  await follow.locator('textarea').fill('24 timmar före besöket via den godkända kontaktvägen.');
+  await follow.getByRole('button',{name:'Spara svar',exact:true}).click();
+  await expect(follow).toHaveCount(0);
+  paket=await (await request.get(`${baseURL}/api/intern/arenden/${a.arende_id}/export`,{headers:internHuvud()})).json();
+  await expect(page.getByRole('heading',{name:/Ni skrev att ni inte vet det säkert/})).toHaveCount(0);
+  expect(paket.behov.find((b:{nyckel:string})=>b.nyckel==='paminnelser').status).toBe('besvarad');
+  expect(paket.tackning.find((b:{nyckel:string})=>b.nyckel==='paminnelser').status).toBe('uppgift_finns');
+  if(evidence){writeFileSync(`${evidence}/REVIEW-r2-${info.project.name}.json`,JSON.stringify({tid:new Date().toISOString(),arende_id:a.arende_id,export:paket,scope:'Verklig lokal Next-app + privat Blob. Regelstyrd intervju, negativ rättelse/ämnesklassning och återöppnat okänt behov.'},null,2));await page.screenshot({path:`${evidence}/REVIEW-r2-${info.project.name}.png`,fullPage:true});}
+});

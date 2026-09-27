@@ -6,7 +6,7 @@ export interface BankFraga { id: string; omrade: string; nyckel: string; text: s
 export interface BankRegel { namn: string; monster: string; flaggor: string; fragor: { id: string; omrade: string; nyckel: string; text: string }[]; paverkar: string }
 export interface Bank {
   schema: string;
-  kalla: { fil: string; repo: string; sha256: string; git_rev: string | null; gren: string | null; ren: boolean };
+  kalla: { fil: string; repo: string; sha256: string; git_rev: string | null; gren: string | null; ren: boolean | null; revision_verifierad?: boolean; ren_omfattning?: string };
   per_omgang: number;
   statusar: string[];
   omraden: Record<string, string>;

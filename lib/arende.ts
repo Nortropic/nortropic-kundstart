@@ -7,7 +7,7 @@ import { ledNasta, type Kandidat, type LedarIndata } from './intervjuledare';
 import { lasDok, laggFil, skapaDok, taBortFil, uppdateraDok } from './lagring';
 import { MAX_ANTAL, MAX_TOTAL, extrahera } from './material';
 import { signalera } from './overlamning';
-import { samlaBehov, laggBehov, tackning } from './tackning';
+import { samlaBehov, laggBehov, tackning, behovMedStatus } from './tackning';
 import type { AiLage, Arende, Fakta, FaktaAi, Fraga, Lank, Material, Rattelse, Svar } from './typer';
 
 export class Vagrad extends Error {
@@ -203,7 +203,7 @@ export function kandidater(a: Arende): Kandidat[] {
   const senareIds = new Set(a.fragor.filter((f) => f.status === 'senare').map((f) => f.id));
   const kanda = kandaNycklar(a);
   const ut: Kandidat[] = [];
-  for (const b of a.behov || []) if (b.status === 'oppen' && !allaIds.has(b.id)) ut.push({ id: b.id, omrade: 'H', nyckel: b.nyckel, text: b.fraga, paverkar: 'Kundens uppgift i ' + b.kalla_fraga + ': ' + b.citat.slice(0, 200), prio: 1, foljd: true });
+  for (const b of behovMedStatus(a)) if (b.status === 'oppen' && (!allaIds.has(b.id) || senareIds.has(b.id))) ut.push({ id: b.id, omrade: 'H', nyckel: b.nyckel, text: b.fraga, paverkar: 'Kundens uppgift i ' + b.kalla_fraga + ': ' + b.citat.slice(0, 200), prio: 1, foljd: true, senare: senareIds.has(b.id) });
   for (const u of a.foljdregler_utlosta) {
     const regel = BANK.foljdregler.find((r) => r.namn === u.regel);
     if (!regel) continue;
@@ -228,6 +228,20 @@ export function aterstar(a: Arende): { viktiga: number; ovriga: number } {
   return { viktiga: k.filter((x) => x.foljd || x.prio === 1).length, ovriga: k.filter((x) => !x.foljd && x.prio > 1).length };
 }
 
+/** En generell ”vem kan veta?”-följd behövs bara medan dess källsvar är okänt. */
+function aktualiseraOkant(a: Arende) {
+  a.foljdregler_utlosta = a.foljdregler_utlosta.filter(u => u.regel !== 'okant' || (() => {
+    const s = [...a.svar].reverse().find(s => s.fraga_id === u.fraga_id);
+    const r = s && [...a.rattelser].reverse().find(r => r.nyckel === s.nyckel && r.revision > s.revision);
+    return s?.typ === 'vet_inte' && !r;
+  })());
+  if (a.foljdregler_utlosta.some(u => u.regel === 'okant')) return;
+  const ids = new Set(BANK.foljdregler.find(r => r.namn === 'okant')?.fragor.map(f => f.id));
+  // Besvarad historik rörs inte. Bara en ännu obesvarad fråga som saknar sin
+  // utlösande okända uppgift tas bort när kunden själv lämnat beskedet.
+  a.fragor = a.fragor.filter(f => !ids.has(f.id) || a.svar.some(s => s.fraga_id === f.id) || (f.status !== 'stalld' && f.status !== 'senare'));
+}
+
 // ---------- svar och rättelser ----------
 
 export async function registreraSvar(id: string, p: { fraga_id: string; text: string; typ: Svar['typ']; idempotens: string }): Promise<{ a: Arende; ny: boolean }> {
@@ -250,11 +264,13 @@ export async function registreraSvar(id: string, p: { fraga_id: string; text: st
     if (tidigare && Date.now() - new Date(tidigare.mottaget).getTime() < MIN_MS_MELLAN_SVAR && tidigare.text === text) return null;
     bump(a);
     const s: Svar = { fraga_id: f.id, nyckel: f.nyckel, omrade: f.omrade, text, typ: p.typ, mottaget: nu(), revision: a.revision, idempotens: p.idempotens, ersatter: tidigare ? tidigare.revision : undefined };
+    const rad = bild(a).find(b => b.nyckel === 'erbjudande');
     a.svar.push(s);
     f.status = 'besvarad';
     const behov = a.behov?.find(b => b.id === f.id);
     if (behov) behov.status = p.typ === 'vet_inte' || p.typ === 'atkomst_saknas' ? 'oppen' : 'besvarad';
-    samlaBehov(a, s);
+    if (behov && (p.typ === 'vet_inte' || p.typ === 'atkomst_saknas')) f.status = 'senare';
+    samlaBehov(a, s, rad ? {varde:rad.varde,kalla:rad.kalla,typ:rad.typ === 'kund' ? 'svar' : rad.typ} : undefined);
     signalera(a);
     for (const t of a.fakta_ai) if (t.nyckel === f.nyckel && t.giltig) { t.giltig = false; t.forkastad_skal = 'kundens senare svar ' + f.id; }
     if (p.typ !== 'vet_inte') {
@@ -270,6 +286,7 @@ export async function registreraSvar(id: string, p: { fraga_id: string; text: st
       const okant = BANK.foljdregler.find((x) => x.namn === 'okant');
       if (okant && !a.foljdregler_utlosta.some((x) => x.regel === 'okant' && x.fraga_id === f.id)) a.foljdregler_utlosta.push({ regel: 'okant', fraga_id: f.id, traff: 'vet inte', tid: nu() });
     }
+    aktualiseraOkant(a);
     handelse(a, 'svar', { fraga_id: f.id, typ: p.typ, tecken: text.length });
     ny = true;
     return a;
@@ -292,11 +309,14 @@ export async function skjutUpp(id: string, fragaId: string): Promise<Arende> {
 /** Öppnar en uppskjuten fråga igen på kundens begäran. */
 export async function oppnaIgen(id: string, fragaId: string): Promise<Arende> {
   const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
-    const f = a.fragor.find((x) => x.id === fragaId && x.status === 'senare');
+    const f = a.fragor.find((x) => x.id === fragaId && (x.status === 'senare' || (a.behov?.some(b => b.id === x.id) && x.status !== 'stalld')));
     if (!f) return null;
     bump(a);
     f.status = 'stalld';
     f.stalld = nu();
+    f.oppnad_revision = a.revision;
+    const behov = a.behov?.find(b => b.id === f.id);
+    if (behov) { behov.status = 'oppen'; for (const t of a.fakta_ai) if (t.nyckel === f.nyckel && t.giltig) {t.giltig = false; t.forkastad_skal = 'kunden öppnade behovet igen';} }
     handelse(a, 'oppnad_igen', { fraga_id: f.id });
     return a;
   });
@@ -320,8 +340,10 @@ export async function registreraRattelse(id: string, p: { nyckel: string; varde:
     bump(a);
     const tidigare: Rattelse['tidigare'] = rad ? { varde: rad.varde, kalla: rad.kalla, typ: rad.typ === 'kund' ? 'svar' : rad.typ } : { varde: '', kalla: '', typ: 'ingen' };
     a.rattelser.push({ nyckel: p.nyckel, varde, mottaget: nu(), revision: a.revision, idempotens: p.idempotens, tidigare });
+    for (const b of a.behov || []) if (b.nyckel === p.nyckel) { b.status = 'besvarad'; const f = a.fragor.find(f => f.id === b.id); if (f) f.status = 'besvarad'; }
     for (const t of a.fakta_ai) if (t.nyckel === p.nyckel && t.giltig) { t.giltig = false; t.forkastad_skal = 'kundens rättelse'; }
     signalera(a);
+    aktualiseraOkant(a);
     handelse(a, 'rattelse', { nyckel: p.nyckel, tidigare: tidigare.typ });
     ny = true;
     return a;
@@ -412,7 +434,8 @@ export async function nasta(id: string): Promise<NastaResultat> {
     for (const t of ut.tackta) {
       const kand = kNu.get(t.fraga_id);
       if (!kand || senareRattat.has(kand.nyckel)) continue;
-      a.fragor.push({ id: kand.id, omrade: kand.omrade, nyckel: kand.nyckel, text: kand.text, paverkar: kand.paverkar, utlost_av: kand.utlost_av ?? null, kalla: 'bank', typ: 'oppen', omgang: a.omgang, stalld: nu(), status: 'tackt', valjare: 'ai' });
+      a.fragor.push({ id: kand.id, omrade: kand.omrade, nyckel: kand.nyckel, text: kand.text, paverkar: kand.paverkar, utlost_av: kand.utlost_av ?? null, kalla: a.behov?.some(b => b.id === kand.id) ? 'behov' : 'bank', typ: 'oppen', omgang: a.omgang, stalld: nu(), status: 'tackt', valjare: 'ai' });
+      const behov = a.behov?.find(b => b.id === kand.id); if (behov) behov.status = 'tackt';
       a.fakta_ai.push({ nyckel: kand.nyckel, varde: t.varde, status: 'tolkning', kalla: kalla + ' täckt av svar', omrade: kand.omrade, datum: nu().slice(0, 10), bas_revision: basRevision, giltig: true, modell: res.modell });
     }
     // Kundens egna nycklar i samtalet: en förifylld uppgift som kunden inte rört får inte skrivas om som "vår tolkning".
@@ -459,25 +482,34 @@ export async function laggMaterialFil(id: string, p: { filnamn: string; mime: st
   if (aktiva.some((m) => m.sha256 === p.sha256)) return { a: befintlig, ny: false }; // samma innehåll igen (återförsök): ingen dubblett
   if (aktiva.length >= MAX_ANTAL) throw new Vagrad(`högst ${MAX_ANTAL} filer per ärende`, 422);
   if (aktiva.reduce((s, m) => s + (m.storlek || 0), 0) + p.data.byteLength > MAX_TOTAL) throw new Vagrad('den sammanlagda storleken på filerna är för stor', 422);
+  const extraktion = extrahera(p.mime, new Uint8Array(p.data), p.sha256);
   const mid = nyttId('m');
   const blobStig = await laggFil(`material/${id}/${mid}`, p.data, p.mime);
   let ny = false;
-  const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
-    ny = false;
-    if (a.material.some((m) => m.idempotens === p.idempotens)) return null;
-    const nuAktiva = a.material.filter(m => m.status === 'mottagen' && m.typ === 'fil');
-    if (nuAktiva.some(m => m.sha256 === p.sha256)) return null;
-    if (nuAktiva.length >= MAX_ANTAL || nuAktiva.reduce((sum, m) => sum + (m.storlek || 0), 0) + p.data.byteLength > MAX_TOTAL) throw new Vagrad('materialgränsen har nåtts', 422);
-    bump(a);
-    const m: Material = { extraktion: extrahera(p.mime, new Uint8Array(p.data), p.sha256), id: mid, typ: 'fil', filnamn: p.filnamn, mime: p.mime, storlek: p.data.byteLength, sha256: p.sha256, blob: blobStig, beskrivning: p.beskrivning?.slice(0, 300), status: 'mottagen', mottaget: nu(), revision: a.revision, idempotens: p.idempotens };
-    a.material.push(m);
-    signalera(a);
-    handelse(a, 'material', { id: mid, mime: p.mime, storlek: p.data.byteLength });
-    ny = true;
-    return a;
-  });
-  if (!ny) await taBortFil(blobStig).catch(() => undefined);
-  return { a: r.data, ny };
+  try {
+    const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+      ny = false;
+      if (a.material.some((m) => m.idempotens === p.idempotens)) return null;
+      const nuAktiva = a.material.filter(m => m.status === 'mottagen' && m.typ === 'fil');
+      if (nuAktiva.some(m => m.sha256 === p.sha256)) return null;
+      if (nuAktiva.length >= MAX_ANTAL || nuAktiva.reduce((sum, m) => sum + (m.storlek || 0), 0) + p.data.byteLength > MAX_TOTAL) throw new Vagrad('materialgränsen har nåtts', 422);
+      bump(a);
+      const m: Material = { extraktion, id: mid, typ: 'fil', filnamn: p.filnamn, mime: p.mime, storlek: p.data.byteLength, sha256: p.sha256, blob: blobStig, beskrivning: p.beskrivning?.slice(0, 300), status: 'mottagen', mottaget: nu(), revision: a.revision, idempotens: p.idempotens };
+      a.material.push(m);
+      signalera(a);
+      handelse(a, 'material', { id: mid, mime: p.mime, storlek: p.data.byteLength });
+      ny = true;
+      return a;
+    });
+    if (!ny) await taBortFil(blobStig).catch(() => undefined);
+    return { a: r.data, ny };
+  } catch (fel) {
+    // A transport failure can follow a committed CAS. Read back before deleting
+    // so an acknowledged-but-lost write cannot leave a dangling material reference.
+    const aktuell = await lasArende(id);
+    if (!aktuell?.material.some(m => m.blob === blobStig)) await taBortFil(blobStig);
+    throw fel;
+  }
 }
 
 export async function laggMaterialLank(id: string, p: { url: string; beskrivning?: string; idempotens: string }): Promise<{ a: Arende; ny: boolean }> {
@@ -548,7 +580,7 @@ export function exportPaket(a: Arende) {
     signal: a.signal,
     kvittenser: a.kvittenser || [],
     returfragor: a.returfragor || [],
-    behov: a.behov || [],
+    behov: behovMedStatus(a),
     tackning: tackning(a),
     ai: a.ai,
     fakta_forifyllda: a.fakta_forifyllda,

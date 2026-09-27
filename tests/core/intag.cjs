@@ -6,11 +6,11 @@ const Module = require('node:module');
 const ts = require('typescript');
 const assert = require('node:assert/strict');
 require.extensions['.ts'] = (m, filename) => m._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText, filename);
-const docs = new Map(); let seq = 0; let collide = false;
+const docs = new Map(); let seq = 0; let collide = false; let writeMode = null; let onFile = null;
 class BlobPreconditionFailedError extends Error {}
 const blob = {
  BlobPreconditionFailedError,
- async put(p, body, o) { const old = docs.get(p); if (o.ifMatch && (old?.etag !== o.ifMatch || collide)) { collide = false; throw new BlobPreconditionFailedError(); } if (old && o.allowOverwrite === false) throw new Error('exists'); const etag = '"' + ++seq + '"'; docs.set(p, { body: typeof body === 'string' ? body : Buffer.from(body), etag }); return { etag, pathname: p }; },
+ async put(p, body, o) { if (o.ifMatch && writeMode === 'always-conflict') throw new BlobPreconditionFailedError(); if(p.startsWith('material/') && onFile){const hook=onFile;onFile=null;hook();} const old = docs.get(p); if (o.ifMatch && (old?.etag !== o.ifMatch || collide)) { collide = false; throw new BlobPreconditionFailedError(); } if (old && o.allowOverwrite === false) throw new Error('exists'); const etag = '"' + ++seq + '"'; docs.set(p, { body: typeof body === 'string' ? body : Buffer.from(body), etag }); if(o.ifMatch && writeMode === 'lost-ack'){writeMode=null;throw new Error('simulated lost acknowledgement');} return { etag, pathname: p }; },
  async get(p) { const v = docs.get(p); return v ? { stream: new Response(v.body).body, blob: { etag: v.etag, size: v.body.length, contentType: 'application/octet-stream' } } : null; },
  async del(p) { docs.delete(p); },
  async list({prefix,cursor,limit}) { const keys = [...docs.keys()].filter(k => k.startsWith(prefix)).sort(); const start = Number(cursor || 0); return { blobs: keys.slice(start,start+limit).map(pathname => ({pathname})), hasMore: start+limit < keys.length, cursor: String(start+limit) }; }
@@ -40,4 +40,72 @@ test('Modellresultat under sen kundrättelse kasseras utan att skriva över aktu
 test('Kundvy visar pausat/reserv efter omladdning, aldrig ett falskt AI på',async()=>{const a=await arende();a.ai.lage='gateway';a.ai.aktuell='reserv';assert.equal(V.tillVy(a).ai.status,'reserv');a.ai.paus_till=new Date(Date.now()+60000).toISOString();assert.equal(V.tillVy(a).ai.status,'pausad');});
 test('Dubbla samtidiga filinlämningar ger ett aktivt original även vid olika idempotensnycklar', async()=>{const a=await arende(); const data=Buffer.from('Samma kontrollerade kundunderlag');const sha=require('node:crypto').createHash('sha256').update(data).digest('hex');const arg={filnamn:'underlag.txt',mime:'text/plain',data:data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength),sha256:sha};await Promise.all([A.laggMaterialFil(a.id,{...arg,idempotens:'SAMTIDIG1'}),A.laggMaterialFil(a.id,{...arg,idempotens:'SAMTIDIG2'})]);const b=await A.lasArende(a.id);assert.equal(b.material.length,1);});
 test('Signalpagination tappar inte en komplettering vid nästa fulla scan',async()=>{for(let n=0;n<102;n++){const a=await arende();await A.lamnaIn(a.id);}let cursor;const seen=new Set();do{const page=await O.signaler(cursor);for(const s of page.signaler)seen.add(s.id);cursor=page.cursor;}while(cursor);assert(seen.size>=102);const a=await A.lasArende(id);await A.registreraRattelse(id,{nyckel:'erbjudande',varde:'Aktuell omfattning 90 minuter',idempotens:'EFTERSCAN'});let found=false;cursor=undefined;do{const page=await O.signaler(cursor);found ||= page.signaler.some(s=>s.arende_id===a.id&&s.revision>a.signal.revision);cursor=page.cursor;}while(cursor);assert(found);});
+test('Orelaterade ord om pris/session ändrar aldrig erbjudandet; riktad 45→60 bevarar tidigare källa',async()=>{
+ for(const text of ['Vi menar att priset ska vara tydligt redan på startsidan.','Vi har ändrat hur priset visas, inte vad vi erbjuder.','Rättelse: företagssessionen är numera 60 minuter.','Porträttsessionen är numera 60 minuter, säger en annan studio.']){
+  const a=await arende();a.fragor.push({id:'X1',nyckel:'bokningsbehov',text:'Bokning?',status:'stalld',kalla:'bank'});store(a);
+  const {a:b}=await A.registreraSvar(a.id,{fraga_id:'X1',text,typ:'text',idempotens:'NEGATIV01'});
+  assert.equal(A.bild(b).find(f=>f.nyckel==='erbjudande').varde,'Porträtt 45 minuter, 1800 kr');assert.equal(b.rattelser.length,0);
+ }
+ const a=await arende();a.fragor.push({id:'X1',nyckel:'bokningsbehov',text:'Bokning?',status:'stalld',kalla:'bank'});store(a);
+ const {a:b}=await A.registreraSvar(a.id,{fraga_id:'X1',text:'Rättelse: porträttsessionen är numera 60 minuter, samma pris.',typ:'text',idempotens:'POSITIV01'});
+ assert.equal(b.rattelser[0].tidigare.varde,'Porträtt 45 minuter, 1800 kr');assert.equal(b.rattelser[0].tidigare.kalla,'äldre underlag');
+});
+test('Metadata/metall/lokalisering ger inga felaktiga obligatoriska ämnen; riktiga delade resurser och Meta gör det',async()=>{
+ for(const text of ['Vi arbetar med metadata och metallskyltar i metallram.','Vi delar erfarenheter om lokalisering och arbetar lokalt.','Vi delar tankar. Rummet är ljust.']){
+  const a=await arende();T.samlaBehov(a,{nyckel:'ovrigt',text,typ:'text',revision:2,fraga_id:'X1'});assert.equal((a.behov||[]).length,0);
+ }
+ const a=await arende();T.samlaBehov(a,{nyckel:'ovrigt',text:'Vi delar samma rum och ljusutrustning. Meta är en tänkbar kanal.',typ:'text',revision:2,fraga_id:'X1'});assert.equal(a.behov.length,2);
+});
+test('AI-täckt behov har rätt källa och status, finns i täckningen och kan öppnas igen',async()=>{
+ const a=await arende();a.ai.lage='gateway';const source='Sam godkänner varje bild före publicering.';
+ a.svar.push({fraga_id:'X1',nyckel:'ovrigt',text:source,typ:'text',revision:2,mottaget:A.nu(),idempotens:'KALLSVAR1'});
+ T.laggBehov(a,{nyckel:'publiceringsvillkor',citat:source,fraga:'Vem godkänner?'},a.svar[0],'ai');store(a);const b=a.behov[0];
+ global.fetch=async()=>new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify({...good,valda:[{id:'A1',text:'Vad är målet?',typ:'oppen',alternativ:[]}],tackta:[{fraga_id:b.id,nyckel:b.nyckel,varde:source,citat:source}]})}}]}));
+ await A.nasta(a.id);const after=await A.lasArende(a.id);
+ assert.equal(after.fragor.find(f=>f.id===b.id).kalla,'behov');assert.equal(A.exportPaket(after).behov[0].status,'tackt');assert.equal(T.tackning(after).find(t=>t.nyckel===b.nyckel).status,'tolkning_att_kontrollera');
+ assert(V.tillVy(after).behov[0].kan_oppnas);const reopened=await A.oppnaIgen(a.id,b.id);assert.equal(V.tillVy(reopened).behov[0].status,'oppen');assert(V.tillVy(reopened).oppna.some(f=>f.id===b.id));assert(!reopened.fakta_ai.some(f=>f.nyckel===b.nyckel&&f.giltig));
+});
+test('Vet inte och saknad åtkomst lämnar behov öppet med återöppning, utan automatisk frågeloop',async()=>{
+ for(const typ of ['vet_inte','atkomst_saknas']){
+  const a=await arende();const source={fraga_id:'X1',nyckel:'ovrigt',text:'Vi behöver påminnelser.',typ:'text',revision:2};T.laggBehov(a,{nyckel:'paminnelser',citat:source.text,fraga:'När?'},source,'regel');const b=a.behov[0];a.fragor.push({id:b.id,nyckel:b.nyckel,omrade:'H',text:b.fraga,paverkar:'Planering',status:'stalld',kalla:'behov'});store(a);
+  const {a:after}=await A.registreraSvar(a.id,{fraga_id:b.id,typ,text:'Kontot saknas ännu.',idempotens:'BEHOVSVAR1'});
+  assert.equal(A.exportPaket(after).behov[0].status,'oppen');assert(A.kandidater(after).find(k=>k.id===b.id).senare);assert(V.tillVy(after).behov[0].kan_oppnas);
+  await A.oppnaIgen(a.id,b.id);const {a:done}=await A.registreraSvar(a.id,{fraga_id:b.id,typ:'text',text:'24 timmar före besöket.',idempotens:'BEHOVSVAR2'});assert.equal(A.exportPaket(done).behov[0].status,'besvarad');
+ }
+});
+function materialArg(key){const b=Buffer.from('Kontrollerad fil '+key);return {filnamn:'test.txt',mime:'text/plain',data:b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength),sha256:require('node:crypto').createHash('sha256').update(b).digest('hex'),idempotens:key};}
+test('Materialgräns nådd under uppladdning städar oregistrerad Blob',async()=>{
+ const a=await arende();onFile=()=>{const latest=JSON.parse(raw(a).body);latest.material=Array.from({length:M.MAX_ANTAL},(_,i)=>({id:'dummy'+i,typ:'fil',status:'mottagen',storlek:1,sha256:'other'+i}));store(latest);};
+ await assert.rejects(A.laggMaterialFil(a.id,materialArg('GRANSUPP1')),e=>e.status===422);assert.equal([...docs.keys()].filter(k=>k.startsWith('material/'+a.id+'/')).length,0);
+});
+test('Uttömd CAS städar fil; extraktion sker exakt en gång även vid konflikt',async()=>{
+ const a=await arende(),original=M.extrahera;let calls=0;M.extrahera=(...args)=>{calls++;return original(...args);};writeMode='always-conflict';
+ try{await assert.rejects(A.laggMaterialFil(a.id,materialArg('CASUPP01')));assert.equal(calls,1);assert.equal([...docs.keys()].filter(k=>k.startsWith('material/'+a.id+'/')).length,0);}finally{writeMode=null;M.extrahera=original;}
+});
+test('Tappat svar efter lyckad CAS raderar inte en refererad bilaga; återförsök duplicerar inte',async()=>{
+ const a=await arende(),arg=materialArg('LOSTACK1');writeMode='lost-ack';await assert.rejects(A.laggMaterialFil(a.id,arg));const after=await A.lasArende(a.id);assert.equal(after.material.length,1);assert(docs.has(after.material[0].blob));assert.equal((await A.laggMaterialFil(a.id,arg)).ny,false);
+});
+test('Tidig inlämning tillåter öppet behov; uttrycklig återöppning efter inlämning visar dialogen igen',async()=>{
+ const a=await arende();const source={fraga_id:'X1',nyckel:'ovrigt',text:'Vi behöver påminnelser.',typ:'text',revision:2};T.laggBehov(a,{nyckel:'paminnelser',citat:source.text,fraga:'När?'},source,'regel');const b=a.behov[0];a.fragor.push({id:b.id,nyckel:b.nyckel,omrade:'H',text:b.fraga,paverkar:'Planering',status:'stalld',kalla:'behov'});store(a);
+ const submitted=await A.lamnaIn(a.id);assert(V.tillVy(submitted).arende.inlamnad);
+ await A.skjutUpp(a.id,b.id);const reopened=await A.oppnaIgen(a.id,b.id);assert.equal(V.tillVy(reopened).arende.inlamnad,null);assert(reopened.fragor[0].oppnad_revision>submitted.inlamningar[0].revision);
+});
+test('Transportfel höjer inte tokenbudgeten; endast faktiskt avkortat svar gör det',async()=>{
+ const calls=[];global.fetch=async(url,opt)=>{calls.push(JSON.parse(opt.body));if(calls.length===1)throw new Error('simulated transport failure');return new Response(JSON.stringify({choices:[{finish_reason:'stop',message:{content:JSON.stringify(good)}}]}));};
+ const r=await I.ledNasta(input,'gateway','openai/gpt-5-mini');assert.equal(r.forsok,2);assert.deepEqual(calls.map(c=>c.max_completion_tokens),[4000,4000]);
+});
+test('En senare uttrycklig kundrättelse stänger ett okänt behov och blir täckningens källa',async()=>{
+ const a=await arende();const source={fraga_id:'X1',nyckel:'ovrigt',text:'Vi behöver påminnelser.',typ:'text',revision:1};T.laggBehov(a,{nyckel:'paminnelser',citat:source.text,fraga:'När?'},source,'regel');const b=a.behov[0];a.fragor.push({id:b.id,nyckel:b.nyckel,omrade:'H',text:b.fraga,paverkar:'Planering',status:'stalld',kalla:'behov'});store(a);
+ await A.registreraSvar(a.id,{fraga_id:b.id,typ:'vet_inte',text:'',idempotens:'OKANTREG1'});
+ const {a:done}=await A.registreraRattelse(a.id,{nyckel:b.nyckel,varde:'24 timmar innan.',idempotens:'RATTATREG1'});
+ assert.equal(A.exportPaket(done).behov[0].status,'besvarad');assert.equal(done.fragor[0].status,'besvarad');assert.equal(T.tackning(done).find(t=>t.nyckel===b.nyckel).kalla,'rattelse:'+done.revision);
+});
+test('Föråldrad vet-inte-följd försvinner först när alla dess källsvar är kända',async()=>{
+ const a=await arende();const rule=require('../../lib/bank.ts').BANK.foljdregler.find(r=>r.namn==='okant');
+ a.fragor.push(...['X1','X2'].map((id,i)=>({id,nyckel:'test_'+i,omrade:'H',text:'Test',paverkar:'Test',status:'stalld',kalla:'bank'})));store(a);
+ await A.registreraSvar(a.id,{fraga_id:'X1',typ:'vet_inte',text:'',idempotens:'OKANTAA1'});await A.registreraSvar(a.id,{fraga_id:'X2',typ:'vet_inte',text:'',idempotens:'OKANTAA2'});
+ let b=await A.lasArende(a.id);b.fragor.push({...rule.fragor[0],paverkar:'Okänt',status:'stalld',kalla:'bank'});store(b);
+ b=(await A.registreraSvar(a.id,{fraga_id:'X1',typ:'text',text:'Nu vet vi första svaret.',idempotens:'OKANTAA3'})).a;assert(b.fragor.some(f=>f.id===rule.fragor[0].id));
+ b=(await A.registreraSvar(a.id,{fraga_id:'X2',typ:'text',text:'Nu vet vi andra svaret.',idempotens:'OKANTAA4'})).a;assert(!b.fragor.some(f=>f.id===rule.fragor[0].id));assert(!b.foljdregler_utlosta.some(u=>u.regel==='okant'));
+});
 (async()=>{const result=[];for(const t of tests){try{await t.fn();result.push({namn:t.name,ok:true});console.log('PASS',t.name);}catch(e){result.push({namn:t.name,ok:false,fel:e.stack});console.error('FAIL',t.name,e);}}const receipt={tid:new Date().toISOString(),omfattning:'Avgränsade domän- och transportkontrakt med kontrollerade providerersättare. Inte leverantörsprov.',resultat:result,complete:result.every(r=>r.ok)};if(process.env.KUNDSTART_PROVKVITTO)fs.writeFileSync(process.env.KUNDSTART_PROVKVITTO,JSON.stringify(receipt,null,2));process.exit(receipt.complete?0:1);})();

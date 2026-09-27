@@ -34,6 +34,7 @@ export interface Fraga {
   alternativ?: string[];
   omgang: number;
   stalld: string;
+  oppnad_revision?: number;
   status: FragaStatus;
   valjare: 'regelstyrd' | 'ai';
 }
@@ -154,4 +155,4 @@ export interface SessionsData {
 }
 
 export interface Signal { id: string; arende_id: string; kund: { slug: string; namn: string }; revision: number; typ: 'inlamning' | 'komplettering'; skapad: string }
-export interface Behov { id: string; nyckel: string; citat: string; fraga: string; kalla_fraga: string; revision: number; status: 'oppen' | 'besvarad'; metod: 'regel' | 'ai'; }
+export interface Behov { id: string; nyckel: string; citat: string; fraga: string; kalla_fraga: string; revision: number; status: 'oppen' | 'besvarad' | 'tackt'; metod: 'regel' | 'ai'; }

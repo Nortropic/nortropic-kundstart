@@ -134,7 +134,7 @@ export default function Samtal({ vy, setVy, gaTill }: { vy: Vy; setVy: (v: Vy) =
         </div>
       )}
 
-      {vy.dialog.length > 0 && <Tackningsbild vy={vy} />}
+      {vy.dialog.length > 0 && <Tackningsbild vy={vy} setVy={setVy} />}
       {!vy.arende.inlamnad && !vy.klar && (
         <p className="aterstar">
           {kvar.viktiga > 0 ? `Kvar just nu: ${kvar.viktiga} ${kvar.viktiga === 1 ? 'fråga' : 'frågor'} som påverkar lösningen` : 'Inga fler frågor som påverkar lösningen just nu'}
@@ -272,8 +272,13 @@ function Bekraftelse({ vy, gaTill }: { vy: Vy; gaTill: (f: 'samtal' | 'bild' | '
   );
 }
 
-function Tackningsbild({ vy }: { vy: Vy }) {
+function Tackningsbild({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void }) {
+  const [fel, setFel] = useState('');
+  async function foljUpp(id: string) {
+    try { const r = await anropa<{ok:true;vy:Vy}>('/api/senare', {method:'POST',body:JSON.stringify({fraga_id:id,oppna:true})});setVy(r.vy);setFel(''); }
+    catch(e) {setFel((e as Error).message);}
+  }
   const oppna = vy.tackning.filter(t => ['inte_undersokt', 'kunden_vet_inte', 'atkomst_saknas', 'aterkom_senare'].includes(t.status));
   const status: Record<string, string> = { inte_undersokt: 'ännu inte undersökt', kunden_vet_inte: 'ni vet inte ännu', atkomst_saknas: 'åtkomst saknas', aterkom_senare: 'ni vill återkomma' };
-  return <details className="not"><summary>Vad som fortfarande behöver undersökas ({oppna.length})</summary><p>Ni kan lämna in redan nu. De här frågorna följer med som öppna frågor och blir inte automatiskt ”behövs inte”. Digitala väljer relevanta kompletteringar.</p><ul>{oppna.map(t => <li key={t.nyckel}>{t.fraga} — {status[t.status]}</li>)}</ul>{vy.behov.filter(b => b.status === 'oppen').map(b => <p key={b.nyckel}>Öppet behov från era ord: ”{b.citat}”</p>)}</details>;
+  return <details className="not"><summary>Vad som fortfarande behöver undersökas ({oppna.length})</summary><p>Ni kan lämna in redan nu. De här frågorna följer med som öppna frågor och blir inte automatiskt ”behövs inte”. Digitala väljer relevanta kompletteringar.</p><ul>{oppna.map(t => <li key={t.nyckel}>{t.fraga} — {status[t.status]}</li>)}</ul>{vy.behov.filter(b => b.status !== 'besvarad').map(b => <p key={b.nyckel}>{b.status === 'tackt' ? 'Tolkat från era ord – kan följas upp' : 'Öppet behov från era ord'}: ”{b.citat}”{b.kan_oppnas && <button type="button" className="knapp lank" onClick={() => void foljUpp(b.id)}>Följ upp frågan</button>}</p>)}{fel && <p role="alert">{fel}</p>}</details>;
 }

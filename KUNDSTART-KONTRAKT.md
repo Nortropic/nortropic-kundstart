@@ -19,7 +19,7 @@ Konsumenten måste använda beständigt importläge och låsa per ärende före 
 
 ## Export och kundens bild
 
-`kundstart-export/1` behåller alla tidigare fält och lägger till `signal`, `kvittenser`, `returfragor`, `behov`, `tackning`. `behov` binder öppna behov till exakt kundcitat, fråge-id, revision och metod. Begränsade regler fångar publiceringsvillkor, delade resurser, påminnelser och marknadsföring även under ett annat frågefält. AI kan föreslå andra behov med citerat stöd; frågebanken är därför inte ett slutet tak. Fynd är öppna frågor tills kunden har svarat, aldrig automatiska produktkrav utan bearbetning.
+`kundstart-export/1` behåller alla tidigare fält och lägger till `signal`, `kvittenser`, `returfragor`, `behov`, `tackning`. `behov` binder öppna behov till exakt kundcitat, fråge-id, revision och metod. Begränsade regler fångar publiceringsvillkor, delade resurser, påminnelser och marknadsföring även under ett annat frågefält. AI kan föreslå andra behov med citerat stöd; frågebanken är därför inte ett slutet tak. Behovsstatus är `oppen`, `tackt` (AI-tolkning, inte kundbekräftelse) eller `besvarad`. Vet inte/saknad åtkomst lämnar behov öppet och frågan uppskjuten, med synlig återöppning i kundens täckningsbild. Äldre felmärkta AI-täckningar får härledd status vid vy/export. Fynd är aldrig automatiska produktkrav utan bearbetning.
 
 Täckning skiljer `inte_undersokt`, `kunden_vet_inte`, `inte_tillampligt`, `atkomst_saknas`, `aterkom_senare`, befintlig kunduppgift och tolkning/förifyllnad att kontrollera. Tidig inlämning är tillåten och behåller luckorna. Kunden kan ange ett motiverat bortval eller beskriven saknad åtkomst genom egna knappar. Ett omnämnt behov är inte bevis för komplett affärsregel eller utgiftsmandat.
 
@@ -42,3 +42,13 @@ HTML/HTM får tas emot som privat **källdokument**, aldrig som körbar sida. Or
 ## Verifiering
 
 `npm run test:core`: isolerade domän-/CAS-/transportkontrakt med märkta providerersättare. `tests/atgarder.spec.ts`: verklig browser och privat Blob mot vald server, inklusive säker gammal HTML,60-minutersrättelse, tidig inlämning och returfråga. `KUNDSTART_PROV_AI=1` aktiverar ett begränsat verkligt gatewayprov. Dessa prov skapar enbart fiktiva testdialoger och skickar inga externa meddelanden. Hostad kundåtkomst och schematisk konsumtion har egna kvitton; lokala prov får inte tillskrivas dem.
+
+## Rättelser och bevis efter separat granskning
+
+Allmänna uttryck som ”vi menar att priset ska vara tydligt” ändrar inte erbjudandet. En automatisk fälträttelse är avsiktligt begränsad till ett uttryckligt `Rättelse: porträttsessionen är numera/nu N minuter` när det tidigare fältet redan beskriver ett porträtt med längd; tidigare värde och källa bevaras. Annan text förblir kundens svar och kan rättas uttryckligen i kundens bild. Regeln innebär inte allmän semantisk rättelseförståelse.
+
+Material extraheras en gång före CAS-callbacken. Vid kast läses ärendet åter före städning: en oregistrerad Blob tas bort, en refererad Blob behålls även om skrivkvittot tappades. Om lagret även vägrar återläsning/radering kan städningen inte bekräftas; API-anropet ska då misslyckas, inte ge ett falskt lyckat besked. Ingen processkraschstäder eller separat lagringsplattform införs här.
+
+`bank_snapshot.py --rev` verifierar källans exakta byte med `git show`, och grennamn måste innehålla revisionen i sin historik. `ren` mäts separat för källfilen i arbetsträdet; exporterad historisk fil har `ren:null` och `revision_verifierad:true`, inte påstått rent arbetsträd. Snapshoten kompilerar regex även i JavaScripts Unicode-läge före skrivning. `bank_kontroll.mjs` kontrollerar både angiven fil och revisionsblobben (`--repo` behövs för fristående exportfil).
+
+Playwrights obundna `test-results*/.last-run.json` ignoreras och följer inte med i Git. Provkvitton ska knytas till kandidat/miljö/omfattning i separat evidens. Gatewayns större tokenbudget används endast efter faktisk avkortning, inte efter transportfel.

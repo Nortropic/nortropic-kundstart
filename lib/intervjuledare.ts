@@ -344,10 +344,11 @@ export async function ledNasta(i: LedarIndata, lage: AiLage, modell: string, max
   if (lage === 'regelstyrd' || i.kandidater.length === 0) return { utdata: regelstyrd(i), lage: 'regelstyrd', tokens_in: 0, tokens_out: 0, ms: Date.now() - start, fallback: false, forsok: 0 };
   let tokens_in = 0, tokens_out = 0, fel = 'sakligt_otillrackligt', forsok = 0;
   const diagnostik: Record<string, unknown>[] = [];
+  let storreBudget = false;
   for (let n = 0; n < Math.min(2, Math.max(1, maxForsok)); n++) {
     forsok++;
     try {
-      const r = lage === 'gateway' ? await viaGateway(i, modell, n) : await viaClaudeCli(i, modell);
+      const r = lage === 'gateway' ? await viaGateway(i, modell, storreBudget ? 1 : 0) : await viaClaudeCli(i, modell);
       tokens_in += r.tokens_in; tokens_out += r.tokens_out;
       diagnostik.push({ forsok, ...( 'diagnos' in r ? r.diagnos : {}), tokens_in: r.tokens_in, tokens_out: r.tokens_out });
       if (!Utdata.safeParse(r.rå).success) throw new ModellFel('format', true);
@@ -363,6 +364,7 @@ export async function ledNasta(i: LedarIndata, lage: AiLage, modell: string, max
       tokens_in += f.tokens_in; tokens_out += f.tokens_out; fel = f.klass;
       diagnostik.push({ forsok, felklass: f.klass, ...f.diagnos, tokens_in: f.tokens_in, tokens_out: f.tokens_out });
       // Långa Retry-After blir väntan/reservläge, aldrig en blind tät loop.
+      storreBudget = f.klass === 'avkortat';
       const delay = Number(f.diagnos.retry_after || 0);
       if (!f.retry || delay > 2 || n + 1 >= maxForsok) break;
       await new Promise(r => setTimeout(r, Math.max(250, Math.min(2000, delay * 1000))));
