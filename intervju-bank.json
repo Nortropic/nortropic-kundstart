@@ -1,0 +1,399 @@
+{
+ "schema": "kundstart-bank/1",
+ "kalla": {
+  "fil": "verktyg/intervju.py",
+  "repo": "Nortropic/nortropic-digitala",
+  "sha256": "b39f9a0525e56bdac5c4427e7df178d65adaa394b345e785942e6dee45b333eb",
+  "git_rev": "03caf0b5473eb45b5548ca999ed975f318b7accd",
+  "gren": "kundstart/verktyg",
+  "ren": true
+ },
+ "per_omgang": 8,
+ "statusar": [
+  "kunden uppger",
+  "observerat",
+  "externt belagt",
+  "tolkning",
+  "hypotes",
+  "preferens",
+  "okänt"
+ ],
+ "omraden": {
+  "A": "Verksamhet, mål och erbjudande",
+  "B": "Besökare och faktiska situationer",
+  "C": "Hela verksamhetsflödet",
+  "D": "Befintliga system och åtkomster",
+  "E": "Varumärke, innehåll och förtroende",
+  "F": "Synlighet och mätning",
+  "G": "Förvaltning och redaktörsarbete",
+  "H": "Ramar och osäkerheter"
+ },
+ "grund": [
+  {
+   "id": "A1",
+   "omrade": "A",
+   "nyckel": "verksamhetsmal",
+   "text": "Vad vill ni att webbplatsen ska förändra för verksamheten det närmaste året? Ge gärna ett konkret exempel på ett bra utfall.",
+   "paverkar": "verksamhetsmål och framgångskriterier (brief §1, §11)",
+   "prio": 1
+  },
+  {
+   "id": "A2",
+   "omrade": "A",
+   "nyckel": "erbjudande",
+   "text": "Vilka tjänster eller produkter erbjuder ni, till vem, och med vilka verkliga villkor (område, tider, priser eller prisprincip, minsta uppdrag)?",
+   "paverkar": "erbjudande, sidor och innehåll (brief §1, §3)",
+   "prio": 1
+  },
+  {
+   "id": "A3",
+   "omrade": "A",
+   "nyckel": "nulage",
+   "text": "Vad fungerar bra och vad fungerar dåligt i dag när kunder hittar er, kontaktar er eller köper?",
+   "paverkar": "interventionsbeslut och prioritering (beredning)",
+   "prio": 1
+  },
+  {
+   "id": "A4",
+   "omrade": "A",
+   "nyckel": "undvik",
+   "text": "Vilka förfrågningar eller uppdrag vill ni helst slippa?",
+   "paverkar": "innehåll som styr bort fel förfrågningar (brief §4, §6)",
+   "prio": 2
+  },
+  {
+   "id": "B1",
+   "omrade": "B",
+   "nyckel": "besokare",
+   "text": "Vilka är det som faktiskt hör av sig? Beskriv de två eller tre vanligaste typerna av kunder och situationer.",
+   "paverkar": "målgrupper och uppgifter (brief §2)",
+   "prio": 1
+  },
+  {
+   "id": "B2",
+   "omrade": "B",
+   "nyckel": "senaste_forfragan",
+   "text": "Beskriv den senaste förfrågan eller bokningen ni fick: vad ville personen, hur kom den in, och vad hände sedan?",
+   "paverkar": "viktigaste uppgiften och handlingskedjan (brief §2, §4)",
+   "prio": 1
+  },
+  {
+   "id": "B3",
+   "omrade": "B",
+   "nyckel": "fore_handling",
+   "text": "Vad behöver en ny kund förstå eller veta innan hen vågar kontakta er, boka eller köpa?",
+   "paverkar": "innehållsstruktur och första vyn (brief §3)",
+   "prio": 2
+  },
+  {
+   "id": "B4",
+   "omrade": "B",
+   "nyckel": "insiktskalla",
+   "text": "Vad av det ni sagt om kunderna har ni sett (statistik, samtal, frågor), och vad är er känsla?",
+   "paverkar": "insiktskälla: observerat eller antaganden (beredning)",
+   "prio": 2
+  },
+  {
+   "id": "C1",
+   "omrade": "C",
+   "nyckel": "efter_inskick",
+   "text": "När någon skickar ett formulär, bokar eller ringer: vem tar emot, i vilket system, och vad händer den första timmen och den första dagen?",
+   "paverkar": "formulärets och bokningens efterled, mottagande system (integrationer.md)",
+   "prio": 1
+  },
+  {
+   "id": "C2",
+   "omrade": "C",
+   "nyckel": "fordelning",
+   "text": "Hur fördelas inkommande ärenden mellan er, och vad händer när den som brukar ta emot är borta?",
+   "paverkar": "mottagare, reservväg, sant besked till kunden (integrationer.md)",
+   "prio": 2
+  },
+  {
+   "id": "C3",
+   "omrade": "C",
+   "nyckel": "felvag",
+   "text": "Vad händer i dag när något går fel: dubbelbokning, obesvarat mejl, fel uppgifter?",
+   "paverkar": "felvägar och dubbletthantering (integrationer.md)",
+   "prio": 2
+  },
+  {
+   "id": "D1",
+   "omrade": "D",
+   "nyckel": "system",
+   "text": "Vilka system använder ni i dag: mejl, kalender, bokning, kassa eller betalning, kundregister, nyhetsbrev, hemsideverktyg, analys- eller annonskonton? Vilka ska vara kvar?",
+   "paverkar": "integrationer och redigeringsväg (brief §9)",
+   "prio": 1
+  },
+  {
+   "id": "D2",
+   "omrade": "D",
+   "nyckel": "kontoagare",
+   "text": "Vem äger kontona (domän, webbhotell, Google, sociala medier) och kan ge åtkomst när det behövs? Skicka inga lösenord i svaret; åtkomst ordnas på säker väg.",
+   "paverkar": "åtkomstberoenden (brief §9, lansering)",
+   "prio": 1
+  },
+  {
+   "id": "E1",
+   "omrade": "E",
+   "nyckel": "ton",
+   "text": "Hur vill ni uppfattas? Tre ord, och gärna ett exempel på en text eller ett sätt att skriva som känns rätt.",
+   "paverkar": "röst och positionering (brief §6, §7)",
+   "prio": 2
+  },
+  {
+   "id": "E2",
+   "omrade": "E",
+   "nyckel": "material",
+   "text": "Vilka texter, bilder, logotyper, omdömen, certifikat och meriter finns, och vad får vi använda och visa?",
+   "paverkar": "innehåll, bild och förtroende med rättigheter (brief §6, §8)",
+   "prio": 1
+  },
+  {
+   "id": "E3",
+   "omrade": "E",
+   "nyckel": "referenser",
+   "text": "Finns det webbplatser ni gillar eller ogillar? Vad är det ni gillar eller ogillar med dem?",
+   "paverkar": "preferenser skilda från fakta (research §13)",
+   "prio": 3
+  },
+  {
+   "id": "F1",
+   "omrade": "F",
+   "nyckel": "hittar",
+   "text": "Hur hittar folk er i dag: rekommendation, sökning, sociala medier, skyltar, annonser? Vilka ord tror ni att de söker på?",
+   "paverkar": "kanalbehov och sökintention (brief §5)",
+   "prio": 1
+  },
+  {
+   "id": "F2",
+   "omrade": "F",
+   "nyckel": "data",
+   "text": "Finns statistik från en Google-företagsprofil, en tidigare hemsida eller annonskonton som vi får titta på?",
+   "paverkar": "befintligt underlag och mätning (beredning, uppföljning)",
+   "prio": 2
+  },
+  {
+   "id": "F3",
+   "omrade": "F",
+   "nyckel": "bra_forfragan",
+   "text": "Vad räknas som en bra förfrågan för er, och hur vet ni efteråt om den blev ett uppdrag?",
+   "paverkar": "konverteringsdefinition och affärsmått (uppfoljning.md)",
+   "prio": 1
+  },
+  {
+   "id": "G1",
+   "omrade": "G",
+   "nyckel": "redaktor",
+   "text": "Vem ska uppdatera innehållet när sajten är igång, hur ofta, och hur van är den personen vid sådana verktyg?",
+   "paverkar": "redigeringsväg och innehållsmodell (integrationer.md, brief §9)",
+   "prio": 2
+  },
+  {
+   "id": "G2",
+   "omrade": "G",
+   "nyckel": "hantering",
+   "text": "Vem tar hand om förfrågningar, bokningar, driftproblem och åtkomster när sajten är igång?",
+   "paverkar": "drift och ansvar (drift.md)",
+   "prio": 2
+  },
+  {
+   "id": "G3",
+   "omrade": "G",
+   "nyckel": "migrering",
+   "text": "Finns en befintlig hemsida med adresser, texter eller annat innehåll som måste bevaras eller flyttas?",
+   "paverkar": "migrering och omdirigeringar (seo.md, lansering.md)",
+   "prio": 1
+  },
+  {
+   "id": "H1",
+   "omrade": "H",
+   "nyckel": "ramar",
+   "text": "Vilka ramar gäller: budget, tidpunkt, vad som måste vara publicerat, integritetskrav, verksamhetsgränser?",
+   "paverkar": "proportion och mandatgränser (beredning)",
+   "prio": 1
+  },
+  {
+   "id": "H2",
+   "omrade": "H",
+   "nyckel": "okant",
+   "text": "Vad vet ni inte själva just nu, och vem skulle kunna svara?",
+   "paverkar": "luckor och vem som avgör (research §17)",
+   "prio": 2
+  }
+ ],
+ "foljdregler": [
+  {
+   "namn": "bokning",
+   "monster": "\\bbok(a|ning|ningar|as|ar)\\b|tidsbokning|boka tid",
+   "flaggor": "i",
+   "fragor": [
+    {
+     "id": "BOK1",
+     "omrade": "C",
+     "nyckel": "bokning_tjanster",
+     "text": "Vilka tjänster ska kunna bokas, hur långa är de, och behövs olika längder eller resurser (person, rum, utrustning)?"
+    },
+    {
+     "id": "BOK2",
+     "omrade": "C",
+     "nyckel": "bokning_tillganglighet",
+     "text": "Vilka tider är bokningsbara, hur många kan bokas samtidigt, och behövs buffertar mellan bokningar?"
+    },
+    {
+     "id": "BOK3",
+     "omrade": "C",
+     "nyckel": "bokning_bekraftelse",
+     "text": "Hur ska kunden få bekräftelse, och hur ska ombokning och avbokning gå till (regler, tidsgräns)?"
+    },
+    {
+     "id": "BOK4",
+     "omrade": "D",
+     "nyckel": "bokning_system",
+     "text": "Använder ni redan ett bokningssystem eller en kalender? Vilket, och ska det vara kvar?"
+    }
+   ],
+   "paverkar": "bokningsintegrationens nivå och leveranskrav: länk, inbäddning, kalenderhändelse eller verifierad bokning (integrationer.md)"
+  },
+  {
+   "namn": "betalning",
+   "monster": "betal|kassa|swish|faktur|kortbetal",
+   "flaggor": "i",
+   "fragor": [
+    {
+     "id": "BET1",
+     "omrade": "C",
+     "nyckel": "betalning_vad",
+     "text": "Vad ska kunna betalas på webbplatsen, och vad faktureras i efterhand?"
+    },
+    {
+     "id": "BET2",
+     "omrade": "D",
+     "nyckel": "betalning_system",
+     "text": "Vilken betal- eller kassalösning använder ni i dag, och vem äger det avtalet?"
+    }
+   ],
+   "paverkar": "betalningsintegration, villkor och juridikflagga e-handel (integrationer.md, juridikflaggor.md)"
+  },
+  {
+   "namn": "crm",
+   "monster": "\\bcrm\\b|kundregister|hubspot|pipedrive|fortnox|visma|lime",
+   "flaggor": "i",
+   "fragor": [
+    {
+     "id": "CRM1",
+     "omrade": "D",
+     "nyckel": "crm_falt",
+     "text": "Vilka uppgifter om en förfrågan ska hamna i kundregistret, och vem ska se dem?"
+    },
+    {
+     "id": "CRM2",
+     "omrade": "D",
+     "nyckel": "crm_agare",
+     "text": "Vem administrerar kundregistret och kan ge en begränsad åtkomst för koppling (inga lösenord i svaret)?"
+    }
+   ],
+   "paverkar": "datamappning och rättigheter för CRM-koppling (integrationer.md)"
+  },
+  {
+   "namn": "nyhetsbrev",
+   "monster": "nyhetsbrev|mailchimp|utskick",
+   "flaggor": "i",
+   "fragor": [
+    {
+     "id": "NYH1",
+     "omrade": "D",
+     "nyckel": "nyhetsbrev",
+     "text": "Hur hanteras nyhetsbrevet i dag (verktyg, lista, samtycke), och ska webbplatsen samla prenumeranter?"
+    }
+   ],
+   "paverkar": "samtyckesläge och integration för nyhetsbrev (uppfoljning.md)"
+  },
+  {
+   "namn": "sprak",
+   "monster": "engelsk|flerspråk|finsk|norsk|dansk|arabisk|språk",
+   "flaggor": "i",
+   "fragor": [
+    {
+     "id": "SPR1",
+     "omrade": "A",
+     "nyckel": "sprak",
+     "text": "Vilka språk behöver webbplatsen ha, och finns översatt innehåll eller någon som kan översätta?"
+    }
+   ],
+   "paverkar": "språkvarianter, hreflang och innehållsmängd (seo.md)"
+  },
+  {
+   "namn": "migrering",
+   "monster": "gammal|befintlig(a)?\\s+(hemsida|sajt|webbplats)|nuvarande (hemsida|sajt)|flytta",
+   "flaggor": "i",
+   "fragor": [
+    {
+     "id": "MIG1",
+     "omrade": "G",
+     "nyckel": "migrering_adresser",
+     "text": "Vilka sidor eller adresser på den befintliga webbplatsen får besökare eller länkar i dag och måste behållas?"
+    },
+    {
+     "id": "MIG2",
+     "omrade": "G",
+     "nyckel": "migrering_innehall",
+     "text": "Vilket innehåll (texter, bilder, dokument) ska följa med, och vad ska bort?"
+    },
+    {
+     "id": "MIG3",
+     "omrade": "D",
+     "nyckel": "migrering_vard",
+     "text": "Var ligger den befintliga webbplatsen (leverantör, verktyg), och vem har åtkomst till domänen?"
+    }
+   ],
+   "paverkar": "omdirigeringar, innehållsflytt och lansering (seo.md, lansering.md)"
+  },
+  {
+   "namn": "okant",
+   "monster": "vet inte|vet ej|osäker|ingen aning|inte säker",
+   "flaggor": "i",
+   "fragor": [
+    {
+     "id": "OK1",
+     "omrade": "H",
+     "nyckel": "okant_vem",
+     "text": "Ni skrev att ni inte vet det säkert. Vem skulle kunna svara, och hur påverkas arbetet om vi inte får veta?"
+    }
+   ],
+   "paverkar": "luckans ägare och påverkan (research §17)"
+  },
+  {
+   "namn": "rackvidd",
+   "monster": "hela landet|nationellt|riks|flera orter|hela sverige|utomlands",
+   "flaggor": "i",
+   "fragor": [
+    {
+     "id": "RACK1",
+     "omrade": "A",
+     "nyckel": "rackvidd",
+     "text": "Vilka orter eller områden arbetar ni faktiskt i, och finns någon ort som är viktigare än andra?"
+    }
+   ],
+   "paverkar": "räckvidd och lokal synlighet (research §5, lokal-synlighet.md)"
+  },
+  {
+   "namn": "besok",
+   "monster": "butik|besök(a|er)? oss|showroom|lokal(en)?\\b|mottagning|kontor(et)?\\b",
+   "flaggor": "i",
+   "fragor": [
+    {
+     "id": "BES1",
+     "omrade": "C",
+     "nyckel": "besok",
+     "text": "Ska kunder kunna besöka er? Vilka tider, hur hittar man, och vad ska vara klart före ett besök?"
+    }
+   ],
+   "paverkar": "fysiskt besök som handling, öppettider och vägbeskrivning (brief §4)"
+  }
+ ],
+ "hemligt": {
+  "monster": "(l[öo]senord|password|api[- ]?nyckel|api key|secret|token)\\s*[:=]\\s*\\S{4,}|\\b(sk_live|re_|AKIA|ghp_)[A-Za-z0-9]{8,}",
+  "flaggor": "i"
+ }
+}

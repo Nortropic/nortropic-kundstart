@@ -1,0 +1,32 @@
+{
+  "name": "nortropic-kundstart",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "bank:kontroll": "node verktyg/bank_kontroll.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.128.0",
+    "@vercel/blob": "2.8.0",
+    "@vercel/oidc": "^3.8.9",
+    "next": "16.3.6",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.6",
+    "typescript": "^5"
+  }
+}
