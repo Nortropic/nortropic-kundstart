@@ -28,7 +28,7 @@ Läst mot Vercels dokumentation 2026-09-27 (AI Gateway pricing/authentication/OI
 - Länk: 256 bitar, hash i lagret, giltig 30 dagar (styrbart), återkallbar; kakan signerad, httpOnly, 30 dagar; alla
   kund-API:er kräver giltig kaka *och* giltig länk vid varje anrop.
 - AI: högst `KUNDSTART_AI_MAX_ANROP` anrop per ärende; efter tre fel i rad (räknaren nollställs vid lyckat anrop)
-  pausas AI-stödet i tio minuter (regelstyrd väg tar över, kunden ser det); gatewayanrop tar högst20s och har högst två försök; modellens svar
+  pausas AI-stödet i tio minuter (regelstyrd väg tar över, kunden ser det); gatewayanrop tar högst25s och har högst två försök; modellens svar
   valideras mot kandidatlistan och längdgränser. Fri text från kunden startar aldrig research, verktygsloopar eller
   webbhämtning. Sidfoten visar faktisk aktuell AI-/reserv-/pausstatus; senaste svarande modell anges bara som kontext.
 - Svar: högst 4 000 tecken; texter som ser ut som lösenord eller nycklar vägras och sparas inte.

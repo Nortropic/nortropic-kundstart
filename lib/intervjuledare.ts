@@ -7,6 +7,7 @@
 // Tre transporter: 'gateway' (Vercel AI Gateway med OIDC eller AI_GATEWAY_API_KEY; skarpt läge på servern),
 // 'claude-cli' (bara lokal verifiering i byggmiljön genom claude -p; vägrar på Vercel) och 'regelstyrd' (ingen modell).
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { AiLage } from './typer';
 
@@ -38,6 +39,7 @@ export interface LedarUtdata {
   meddelande: string;
   klar: boolean;
   behov?: { nyckel: string; citat: string; fraga: string }[];
+  avvisade?: { falt: string; id: string; orsak: string; citat_sha256?: string }[];
 }
 
 export interface LedarResultat {
@@ -184,16 +186,20 @@ export function validera(rå: unknown, i: LedarIndata): LedarUtdata | null {
   if (!p.success) return null;
   const kand = new Map(i.kandidater.map((k) => [k.id, k]));
   if (p.data.valda.some(v => !kand.has(v.id)) || p.data.tackta.some(t => !kand.has(t.fraga_id))) return null;
-  if (p.data.behov.some(b => !/^[a-z_]{2,60}$/.test(b.nyckel) || !b.citat.trim() || ![...i.dialog, ...(i.senaste ? [i.senaste] : [])].some(d => d.svar.includes(b.citat)) || !b.fraga.trim())) return null;
+  const citatFinns = (citat: string) => Boolean(citat.trim() && [...i.dialog, ...(i.senaste ? [i.senaste] : [])].some(d => d.svar.includes(citat)));
+  const avvisade: NonNullable<LedarUtdata['avvisade']> = [];
+  const avvisa = (falt: string, id: string, citat: string, orsak: string) => avvisade.push({ falt, id, orsak, citat_sha256: createHash('sha256').update(citat).digest('hex') });
   const kandaNycklar = new Set([...i.kanda.map((k) => k.nyckel), ...i.kandidater.map((k) => k.nyckel)]);
-  const behov = p.data.behov.filter(b => ![...kandaNycklar].some(k => b.nyckel === k || b.nyckel.startsWith(k + '_'))).map(b => ({ ...b, fraga: rensa(b.fraga, 500) }));
-  if (p.data.tackta.some(t => !t.citat.trim() || ![...i.dialog, ...(i.senaste ? [i.senaste] : [])].some(d => d.svar.includes(t.citat)))) return null;
+  const behov = p.data.behov.filter(b => {
+    if (!/^[a-z_]{2,60}$/.test(b.nyckel) || !b.fraga.trim() || !citatFinns(b.citat)) { avvisa('behov', b.nyckel, b.citat, 'saknar_ordagrant_kallstod'); return false; }
+    return ![...kandaNycklar].some(k => b.nyckel === k || b.nyckel.startsWith(k + '_'));
+  }).map(b => ({ ...b, fraga: rensa(b.fraga, 500) }));
   const tackta = p.data.tackta
-    .filter((t) => kand.has(t.fraga_id) && t.varde.trim())
+    .filter((t) => { if (!citatFinns(t.citat)) { avvisa('tackta', t.fraga_id, t.citat, 'saknar_ordagrant_kallstod'); return false; } return kand.has(t.fraga_id) && t.varde.trim(); })
     .map((t) => ({ fraga_id: t.fraga_id, nyckel: kand.get(t.fraga_id)!.nyckel, varde: rensa(t.citat, MAX_VARDE), citat: t.citat }))
     .filter((t, ix, arr) => arr.findIndex((x) => x.fraga_id === t.fraga_id) === ix);
   const tacktIds = new Set(tackta.map((t) => t.fraga_id));
-  const valda = p.data.valda
+  let valda = p.data.valda
     .filter((v) => kand.has(v.id) && !tacktIds.has(v.id))
     .filter((v, ix, arr) => arr.findIndex((x) => x.id === v.id) === ix)
     .slice(0, 2)
@@ -202,6 +208,12 @@ export function validera(rå: unknown, i: LedarIndata): LedarUtdata | null {
       const alternativ = v.typ === 'val' ? v.alternativ.map((a) => rensa(a, 60)).filter(Boolean).slice(0, 5) : [];
       return { id: v.id, text, typ: alternativ.length >= 2 ? ('val' as const) : ('oppen' as const), alternativ };
     });
+  if (avvisade.length) {
+    // En ostyrkt täckningsrad stänger ingen fråga. Be kunden reda ut just den,
+    // medan andra korrekt källbundna behov/täckningar bevaras.
+    const riktad = avvisade.map(x => kand.get(x.id)).find(Boolean) || i.kandidater.find(k => !tacktIds.has(k.id));
+    valda = riktad ? [{ id: riktad.id, text: riktad.text, typ: 'oppen', alternativ: [] }] : [];
+  }
   const bild = p.data.bild
     .filter((b) => kandaNycklar.has(b.nyckel) && b.varde.trim())
     .map((b) => ({ nyckel: b.nyckel, varde: rensa(b.varde, MAX_VARDE) }))
@@ -209,12 +221,12 @@ export function validera(rå: unknown, i: LedarIndata): LedarUtdata | null {
     .slice(0, 12);
   const kvar = i.kandidater.filter((k) => !tacktIds.has(k.id));
   const maste = kvar.some((k) => k.foljd || k.prio === 1);
-  const klar = p.data.klar && !maste;
+  const klar = p.data.klar && !maste && avvisade.length === 0;
   if (!klar && valda.length === 0) {
-    if (kvar.length === 0) return { valda: [], tackta, bild, behov, meddelande: rensa(p.data.meddelande, MAX_MEDDELANDE), klar: true };
+    if (kvar.length === 0) return { valda: [], tackta, bild, behov, avvisade, meddelande: rensa(p.data.meddelande, MAX_MEDDELANDE), klar: true };
     return null;
   }
-  return { valda: klar ? [] : valda, tackta, bild, behov, meddelande: rensa(p.data.meddelande, MAX_MEDDELANDE), klar };
+  return { valda: klar ? [] : valda, tackta, bild, behov, avvisade, meddelande: rensa(p.data.meddelande, MAX_MEDDELANDE), klar };
 }
 
 /** Den regelstyrda vägen: följdfrågor först, sedan luckor i prioritetsordning, en fråga i taget. */
@@ -254,7 +266,7 @@ async function viaGateway(i: LedarIndata, modell: string, forsok: number) {
   const nyckel = await gatewayNyckel();
   if (!nyckel) throw new ModellFel('atkomst', false);
   const styr = new AbortController();
-  const t = setTimeout(() => styr.abort(), 20_000);
+  const t = setTimeout(() => styr.abort(), 25_000);
   try {
     const antrop = modell.startsWith('anthropic/');
     const kropp = antrop ? {
@@ -341,6 +353,10 @@ export async function ledNasta(i: LedarIndata, lage: AiLage, modell: string, max
       if (!Utdata.safeParse(r.rå).success) throw new ModellFel('format', true);
       const utdata = validera(r.rå, i);
       if (!utdata) throw new ModellFel('sakligt_otillrackligt', true, { validering: valideringsfel(r.rå, i) || 'ingen_anvandbar_nasta_fraga' });
+      if (utdata.avvisade?.length) {
+        diagnostik.push({ forsok, felklass: 'sakligt_otillrackligt', avvisade: utdata.avvisade });
+        return { utdata, lage: 'regelstyrd', modell, tokens_in, tokens_out, ms: Date.now() - start, fallback: true, fel: 'sakligt_otillrackligt', felklass: 'sakligt_otillrackligt', diagnostik, forsok };
+      }
       return { utdata, lage, modell, tokens_in, tokens_out, ms: Date.now() - start, fallback: false, diagnostik, forsok };
     } catch (e) {
       const f = e instanceof ModellFel ? e : new ModellFel('transport', false);
