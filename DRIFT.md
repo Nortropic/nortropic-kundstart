@@ -68,3 +68,13 @@ kundmappen. Ingen automatisk gallring är inbyggd; bestäm bevarandetid i bestä
 ## Kandidatens nya kontrakt
 
 Se [KUNDSTART-KONTRAKT.md](KUNDSTART-KONTRAKT.md). Föregående kostnadsuppskattning baserades på den äldre tokenbudgeten och är historisk; den bevisar ingen kostnad för den nya kandidaten. Modellen och befintligt konto behålls, inga köpta krediter tillförs.
+
+Avläsning 2026-09-28: källkandidat `defcbacc` används på den legitima kundaliasen. En faktisk
+kundrevision är importerad och fjärrkvitterad genom Digitalas ordinarie konsument. Två nya
+verkliga 60-sekunders schemastarter på RTac5/Office58/Digitala d611 gav därefter inget nytt,
+med oförändrad kundakt; detta är temporär kandidatkvalificering, inte aktiv Runtime-drift.
+Deployment och intagsbevis är inte main-integration. Privat reposkydd och draft har separat
+planhinder; ingen synlighets- eller planändring görs. Kontorets gällande plan äger nästa
+införandesteg. `atgarder/intag-20260927` bevaras lokalt som exakt gransknings-/deploybaslinje;
+`atgarder/dokumentkontinuitet-20260928` tillför enbart denna faktanot inför källpublicering.
+Den nya dokumentrevisionen får inte beskrivas som den tidigare koddomens exakta SHA.
