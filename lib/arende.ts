@@ -29,6 +29,8 @@ const MIN_MS_MELLAN_SVAR = 2000; // tidsstämplar har sekundupplösning; idempot
 const PAUS_EFTER_FEL = 3;
 const PAUS_MIN = 10;
 const AGENT_MAX_TOKENS = 6000;
+/** En agenttur (alla försök) ryms i /api/nasta:s maxDuration 60 s med marginal för lagring. */
+const TUR_MS = 52_000;
 const AGENT_MAX_TOKENS_OMTAG = 10000;
 const LAS_MS = 80_000;
 const MAX_RESEARCH = 6;
@@ -685,8 +687,8 @@ async function korAgent(a: Arende, lage: AiLage, modell: string, system: string,
   const ut: Anropsutfall = { svar: null, forsok: 0, tokens_in: 0, tokens_out: 0, kand_usd: 0, okand_usd: 0, ms: 0, diagnostik: [] };
   let maxTokens = AGENT_MAX_TOKENS;
   for (let n = 0; n < 2; n++) {
-    // Andra försöket bara om tid återstår inom funktionens gräns och felet går att försöka om.
-    if (n > 0 && (lage === 'claude-cli' || Date.now() - start > 22_000)) break;
+    // Turen har 52 s inom funktionens 60 s. Andra försöket bara när minst 25 s återstår och felet går att försöka om.
+    if (n > 0 && (lage === 'claude-cli' || Date.now() - start > TUR_MS - 25_000)) break;
     const tecken = system.length + anvandare.length;
     let res: { ok: true; id: string; usd: number } | null = null;
     if (lage === 'gateway') {
@@ -698,7 +700,7 @@ async function korAgent(a: Arende, lage: AiLage, modell: string, system: string,
     ut.forsok++;
     try {
       const svar = lage === 'gateway'
-        ? await viaGateway({ modell, system, anvandare, schemaNamn: 'kundstart_agent', schema: AGENT_SCHEMA, maxTokens, timeoutMs: n === 0 ? 30_000 : 22_000 })
+        ? await viaGateway({ modell, system, anvandare, schemaNamn: 'kundstart_agent', schema: AGENT_SCHEMA, maxTokens, timeoutMs: Math.min(40_000, TUR_MS - (Date.now() - start)) })
         : await viaClaudeCli({ modell: process.env.KUNDSTART_CLI_MODELL || 'claude-opus-5', system, anvandare, schemaNamn: 'kundstart_agent', schema: AGENT_SCHEMA, maxTokens, timeoutMs: 170_000 });
       const kostnad = svar.kostnad_usd ?? (lage === 'gateway' ? kostnadUrToken(modell, svar.tokens_in, svar.tokens_out) : null);
       if (res) await avrakna(res.id, kostnad, res.usd);

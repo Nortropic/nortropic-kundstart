@@ -23,7 +23,7 @@ Uppdaterad 2026-09-28 för intervjuagenten, tillvalen, domänflödet och kostnad
 | `KUNDSTART_AI_MODELL` | Vercel | standard `openai/gpt-5-mini`; `anthropic/claude-haiku-4.5` när krediter finns |
 | `KUNDSTART_AI_MAX_ANROP` | Vercel | AI-anrop per ärende (standard 60) |
 | `KUNDSTART_AI_BUDGET_ARENDE_USD` / `_DYGN_USD` / `_MANAD_USD` | Vercel | kostnadstak per ärende / dygn (UTC) / kalendermånad, standard 0,40 / 1,00 / 3,50 USD |
-| `KUNDSTART_AI_RESONEMANG` | Vercel | resonemangsnivå för gatewaymodellen, standard `minimal` |
+| `KUNDSTART_AI_RESONEMANG` | Vercel | resonemangsnivå för gatewaymodellen, standard `low` (mätt: `minimal` registrerade 4–6 av 8 kundbesked om tillval rätt, `low` 8 av 8) |
 | `KUNDSTART_CLI_MODELL`, `KUNDSTART_CLI_EFFORT` | bara lokalt | testlägets modell (standard `claude-opus-5`) och effort (standard `low`) |
 | `AI_GATEWAY_API_KEY` | valfri | ersätter OIDC (t.ex. kör utanför Vercel) |
 | `BLOB_READ_WRITE_TOKEN`, `VERCEL_OIDC_TOKEN`, `BLOB_STORE_ID` | av Vercel | lagrets åtkomst |
@@ -37,8 +37,8 @@ Uppdaterad 2026-09-28 för intervjuagenten, tillvalen, domänflödet och kostnad
   listpris) mot ärendets, dygnets och månadens tak i en villkorad skrivning av `budget/ai-<månad>.json`; efter anropet
   avräknas gatewayns faktiska `usage.cost`. Okänd kostnad (timeout) avräknas som hela reservationen. Når ett tak körs
   den regelstyrda vägen och sidfoten säger t.ex. "AI-stöd: pausat (dagens budget för AI-stödet är nådd)". Inga krediter
-  köps och inget tak höjs automatiskt. Efter tre fel i rad pausas AI-stödet i tio minuter. Ett gatewayanrop tar högst 25 s; ett andra försök
-  görs bara om det första tog under 22 s. En modellrespons som kommer efter en nyare kundändring bokförs men kasseras.
+  köps och inget tak höjs automatiskt. Efter tre fel i rad pausas AI-stödet i tio minuter. En agenttur får 52 s (funktionens gräns är 60 s):
+  ett gatewayanrop högst 40 s, ett andra försök bara när minst 25 s återstår. En modellrespons som kommer efter en nyare kundändring bokförs men kasseras.
   Agentens noteringar godtas bara med ordagrant citat ur namngivet kundsvar eller material; researchbeställningar är
   högst sex per ärende och startar ingen hämtning i Kundstart. Fri text från kunden startar aldrig verktygsloopar
   eller webbhämtning. Sidfoten visar faktiskt läge (på, av, reserv, paus, kostnadsgräns).

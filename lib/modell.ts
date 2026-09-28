@@ -53,10 +53,11 @@ export function lasGatewaySvar(d: GatewayData): ModellSvar {
   }
 }
 
-/** Resonemangsnivå för gpt-5-modeller: minimal ger kortast svarstid i ett samtal; low kan väljas med KUNDSTART_AI_RESONEMANG. */
+/** Standard "low": mätt 2026-09-28 gav "minimal" 4–6 av 8 rätt registrerade kundbesked om tillval, "low" 8 av 8
+ *  (tillval-eval i uppdragets evidens), till ungefär 0,004 USD och 14–21 s per tur. */
 export function resonemang(): 'minimal' | 'low' | 'medium' {
   const v = process.env.KUNDSTART_AI_RESONEMANG;
-  return v === 'low' || v === 'medium' ? v : 'minimal';
+  return v === 'minimal' || v === 'medium' ? v : 'low';
 }
 
 export interface Begaran {
