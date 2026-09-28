@@ -1,0 +1,6 @@
+# Lokala prov- och arbetsfiler följer aldrig med en driftsättning (Vercels standardlista gäller därutöver).
+.env*
+.scratch/
+test-results*/
+playwright-report/
+.playwright/

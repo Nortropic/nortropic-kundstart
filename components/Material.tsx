@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { AnropsFel, anpassaBild, anropa, klockslag, nyNyckel, storlek } from '@/lib/klient';
 import type { Vy } from '@/lib/vy';
 
-const ACCEPT = '.jpg,.jpeg,.png,.webp,.svg,.pdf,.docx,.xlsx,.pptx,.txt,.md,.csv';
+const ACCEPT = '.jpg,.jpeg,.png,.webp,.svg,.pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.html,.htm';
 const MAX = 4_000_000;
 
 export default function Material({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void }) {
@@ -67,8 +67,7 @@ export default function Material({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void
 
   return (
     <div>
-      <h1>Material</h1>
-      <p>Har ni logotyp, bilder, texter, prislistor, omdömen eller en befintlig webbplats? Lämna det här, så slipper ni beskriva det. En mottagen fil betyder att den är sparad hos oss; vi läser den i nästa steg.</p>
+      <p className="dis liten">Logotyp, bilder, texter, prislistor, omdömen eller er nuvarande webbplats? Lämna det här, så slipper ni beskriva det. Mottaget betyder sparat hos oss; det betyder inte att Digitala har läst det än.</p>
       {vy.material.length > 0 && (
         <ul className="material-lista" aria-label="Lämnat material">
           {vy.material.map((m) => (
@@ -76,15 +75,15 @@ export default function Material({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void
           ))}
         </ul>
       )}
-      <h3>Ladda upp filer</h3>
+      <h3 className="grupp-rubrik">Ladda upp filer</h3>
       <label className="fil-val">
-        <span className="liten dis">Bilder (jpg, png, webp, svg), PDF, Word, Excel, PowerPoint eller text. Högst 4 MB per fil; stora bilder förminskas i webbläsaren.</span>
+        <span className="liten dis">Bilder (jpg, png, webp, svg), PDF, Word, Excel, PowerPoint, text eller sparad HTML-sida (endast textutdrag). Högst 4 MB per fil; stora bilder förminskas i webbläsaren.</span>
         <input ref={filRef} type="file" accept={ACCEPT} multiple onChange={(e) => void laddaUpp(e)} disabled={lage === 'laddar'} aria-describedby="material-status" />
       </label>
       <label className="liten dis" htmlFor="beskrivning">Vad är det? (valfritt)</label>
       <input id="beskrivning" className="falt" value={beskrivning} onChange={(e) => setBeskrivning(e.target.value)} placeholder="T.ex. logotyp, prislista 2026, bilder från jobb" maxLength={300} />
 
-      <h3>Eller lämna en länk</h3>
+      <h3 className="grupp-rubrik">Eller lämna en länk</h3>
       <form onSubmit={(e) => void laggLank(e)}>
         <label className="liten dis" htmlFor="url">Webbadress</label>
         <input id="url" className="falt" type="url" inputMode="url" autoCapitalize="none" autoCorrect="off" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
@@ -118,7 +117,7 @@ function Post({ m, setVy }: { m: Vy['material'][number]; setVy: (v: Vy) => void 
         {m.typ === 'fil' ? <a href={'/api/material/' + m.id}>{m.filnamn}</a> : <a href={m.url} rel="noreferrer noopener" target="_blank">{m.url}</a>}
         {m.beskrivning ? <span className="dis"> – {m.beskrivning}</span> : null}
       </span>
-      <span className="meta">{m.typ === 'fil' ? storlek(m.storlek) + ' · ' : ''}mottagen {klockslag(m.mottaget)}</span>
+      <span className="meta">{m.typ === 'fil' ? storlek(m.storlek) + ' · ' : ''}mottagen {klockslag(m.mottaget)} · {m.lasstatus}</span>
       {!bekrafta ? (
         <button type="button" className="knapp lank" onClick={() => setBekrafta(true)}>Ta bort</button>
       ) : (

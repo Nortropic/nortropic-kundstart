@@ -1,12 +1,12 @@
 // Digitalas frågebank (snapshot ur nortropic-digitala verktyg/intervju.py) och den regelstyrda delen av
-// intervjulogiken: luckor i prioritetsordning och följdfrågor ur svaren. Kundstart har inga egna frågor.
+// intervjulogiken: luckor i prioritetsordning och följdfrågor ur svaren. Källbundna behov/returfrågor är separata från bankens snapshot.
 import bankJson from '../intervju-bank.json';
 
 export interface BankFraga { id: string; omrade: string; nyckel: string; text: string; paverkar: string; prio: number }
 export interface BankRegel { namn: string; monster: string; flaggor: string; fragor: { id: string; omrade: string; nyckel: string; text: string }[]; paverkar: string }
 export interface Bank {
   schema: string;
-  kalla: { fil: string; repo: string; sha256: string; git_rev: string | null; gren: string | null; ren: boolean };
+  kalla: { fil: string; repo: string; sha256: string; git_rev: string | null; gren: string | null; ren: boolean | null; revision_verifierad?: boolean; ren_omfattning?: string };
   per_omgang: number;
   statusar: string[];
   omraden: Record<string, string>;

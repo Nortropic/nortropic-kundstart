@@ -1,0 +1,365 @@
+{
+  "kalla": "lib/arende.ts vid 133f37f (driftsatt defcbac + dokumentcommits), minnesersatt Blob och modell",
+  "skapad": "2026-09-28T18:39:48.059Z",
+  "arende": {
+    "schema": "kundstart-arende/1",
+    "id": "ar_4HYIRxaFgnK7",
+    "kund": {
+      "slug": "gammalt-arende",
+      "namn": "Gammal cykelverkstad TEST"
+    },
+    "kanal": "Kundstart-länk (TESTDIALOG)",
+    "testdialog": true,
+    "skapad": "2026-09-28T18:39:46Z",
+    "uppdaterad": "2026-09-28T18:39:48Z",
+    "revision": 8,
+    "fakta_forifyllda": [
+      {
+        "nyckel": "erbjudande",
+        "varde": "Cykelservice",
+        "status": "kunden uppger",
+        "kalla": "äldre underlag",
+        "omrade": "A",
+        "datum": "2026-09-28"
+      }
+    ],
+    "fragor": [
+      {
+        "id": "A1",
+        "omrade": "A",
+        "nyckel": "verksamhetsmal",
+        "text": "Vad vill ni att webbplatsen ska förändra för verksamheten det närmaste året? Ge gärna ett konkret exempel på ett bra utfall.",
+        "paverkar": "verksamhetsmål och framgångskriterier (brief §1, §11)",
+        "utlost_av": null,
+        "kalla": "bank",
+        "typ": "oppen",
+        "omgang": 1,
+        "stalld": "2026-09-28T18:39:47Z",
+        "status": "besvarad",
+        "valjare": "ai"
+      },
+      {
+        "id": "BEH3_1",
+        "omrade": "H",
+        "nyckel": "paminnelser",
+        "text": "När behövs påminnelsen, till vem och genom vilken tillåten kontaktväg?",
+        "paverkar": "Kundens uppgift i A1: Vi vill att kunderna ska kunna boka service själva och vi behöver påminnelser före besöket.",
+        "utlost_av": null,
+        "kalla": "behov",
+        "typ": "oppen",
+        "omgang": 2,
+        "stalld": "2026-09-28T18:39:47Z",
+        "status": "senare",
+        "valjare": "regelstyrd"
+      },
+      {
+        "id": "BOK1",
+        "omrade": "C",
+        "nyckel": "bokning_tjanster",
+        "text": "Vilka tjänster ska kunna bokas, hur långa är de, och behövs olika längder eller resurser (person, rum, utrustning)?",
+        "paverkar": "bokningsintegrationens nivå och leveranskrav: länk, inbäddning, kalenderhändelse eller verifierad bokning (integrationer.md)",
+        "utlost_av": "A1: \"boka\"",
+        "kalla": "bank",
+        "typ": "oppen",
+        "omgang": 3,
+        "stalld": "2026-09-28T18:39:48Z",
+        "status": "stalld",
+        "valjare": "regelstyrd"
+      }
+    ],
+    "svar": [
+      {
+        "fraga_id": "A1",
+        "nyckel": "verksamhetsmal",
+        "omrade": "A",
+        "text": "Vi är en cykelverkstad i Umeå. Vi vill att kunderna ska kunna boka service själva och vi behöver påminnelser före besöket.",
+        "typ": "text",
+        "mottaget": "2026-09-28T18:39:47Z",
+        "revision": 3,
+        "idempotens": "GAMMALT001"
+      },
+      {
+        "fraga_id": "BEH3_1",
+        "nyckel": "paminnelser",
+        "omrade": "H",
+        "text": "Vet inte",
+        "typ": "vet_inte",
+        "mottaget": "2026-09-28T18:39:47Z",
+        "revision": 5,
+        "idempotens": "GAMMALT002"
+      }
+    ],
+    "rattelser": [
+      {
+        "nyckel": "erbjudande",
+        "varde": "Cykelservice, reparationer och däckbyte",
+        "mottaget": "2026-09-28T18:39:48Z",
+        "revision": 7,
+        "idempotens": "GAMMALT003",
+        "tidigare": {
+          "varde": "Cykelservice",
+          "kalla": "äldre underlag",
+          "typ": "forifylld"
+        }
+      }
+    ],
+    "fakta_ai": [],
+    "material": [],
+    "foljdregler_utlosta": [
+      {
+        "regel": "bokning",
+        "fraga_id": "A1",
+        "traff": "boka",
+        "tid": "2026-09-28T18:39:47Z"
+      },
+      {
+        "regel": "okant",
+        "fraga_id": "BEH3_1",
+        "traff": "vet inte",
+        "tid": "2026-09-28T18:39:47Z"
+      }
+    ],
+    "ai": {
+      "lage": "gateway",
+      "anrop": 5,
+      "tokens_in": 9000,
+      "tokens_out": 1500,
+      "fel": 2,
+      "aktuell": "reserv",
+      "diagnostik": [
+        {
+          "forsok": 1,
+          "finish_reason": "stop",
+          "reasoning_tokens": 0,
+          "tokens_in": 1800,
+          "tokens_out": 300
+        },
+        {
+          "forsok": 1,
+          "felklass": "format",
+          "tokens_in": 0,
+          "tokens_out": 0
+        },
+        {
+          "forsok": 2,
+          "finish_reason": "stop",
+          "reasoning_tokens": 0,
+          "tokens_in": 1800,
+          "tokens_out": 300
+        },
+        {
+          "forsok": 2,
+          "felklass": "format",
+          "tokens_in": 0,
+          "tokens_out": 0
+        }
+      ],
+      "fel_i_rad": 2,
+      "modell": "openai/gpt-5-mini",
+      "senaste_lyckade": "2026-09-28T18:39:47Z",
+      "felklass": "format",
+      "senaste_fel": "format",
+      "senaste_fel_tid": "2026-09-28T18:39:48Z"
+    },
+    "omgang": 3,
+    "inlamningar": [
+      {
+        "tid": "2026-09-28T18:39:48Z",
+        "revision": 8,
+        "svar": 2,
+        "material": 0
+      }
+    ],
+    "handelser": [
+      {
+        "tid": "2026-09-28T18:39:46Z",
+        "typ": "skapad",
+        "revision": 1,
+        "detaljer": {
+          "fakta": 1,
+          "ai": "gateway"
+        }
+      },
+      {
+        "tid": "2026-09-28T18:39:46Z",
+        "typ": "lank_skapad",
+        "revision": 1,
+        "detaljer": {
+          "hash": "38d4fa9150ad",
+          "utgar": "2026-10-28T18:39:46.997Z"
+        }
+      },
+      {
+        "tid": "2026-09-28T18:39:47Z",
+        "typ": "nasta",
+        "revision": 2,
+        "detaljer": {
+          "lage": "gateway",
+          "fallback": false,
+          "valda": [
+            "A1"
+          ],
+          "tackta": [],
+          "ms": 2,
+          "diagnostik": [
+            {
+              "forsok": 1,
+              "finish_reason": "stop",
+              "reasoning_tokens": 0,
+              "tokens_in": 1800,
+              "tokens_out": 300
+            }
+          ]
+        }
+      },
+      {
+        "tid": "2026-09-28T18:39:47Z",
+        "typ": "svar",
+        "revision": 3,
+        "detaljer": {
+          "fraga_id": "A1",
+          "typ": "text",
+          "tecken": 122
+        }
+      },
+      {
+        "tid": "2026-09-28T18:39:47Z",
+        "typ": "nasta",
+        "revision": 4,
+        "detaljer": {
+          "lage": "regelstyrd",
+          "fallback": true,
+          "fel": "format",
+          "valda": [
+            "BEH3_1"
+          ],
+          "tackta": [],
+          "ms": 503,
+          "felklass": "format",
+          "diagnostik": [
+            {
+              "forsok": 1,
+              "finish_reason": "stop",
+              "reasoning_tokens": 0,
+              "tokens_in": 1800,
+              "tokens_out": 300
+            },
+            {
+              "forsok": 1,
+              "felklass": "format",
+              "tokens_in": 0,
+              "tokens_out": 0
+            },
+            {
+              "forsok": 2,
+              "finish_reason": "stop",
+              "reasoning_tokens": 0,
+              "tokens_in": 1800,
+              "tokens_out": 300
+            },
+            {
+              "forsok": 2,
+              "felklass": "format",
+              "tokens_in": 0,
+              "tokens_out": 0
+            }
+          ]
+        }
+      },
+      {
+        "tid": "2026-09-28T18:39:47Z",
+        "typ": "svar",
+        "revision": 5,
+        "detaljer": {
+          "fraga_id": "BEH3_1",
+          "typ": "vet_inte",
+          "tecken": 8
+        }
+      },
+      {
+        "tid": "2026-09-28T18:39:48Z",
+        "typ": "nasta",
+        "revision": 6,
+        "detaljer": {
+          "lage": "regelstyrd",
+          "fallback": true,
+          "fel": "format",
+          "valda": [
+            "BOK1"
+          ],
+          "tackta": [],
+          "ms": 504,
+          "felklass": "format",
+          "diagnostik": [
+            {
+              "forsok": 1,
+              "finish_reason": "stop",
+              "reasoning_tokens": 0,
+              "tokens_in": 1800,
+              "tokens_out": 300
+            },
+            {
+              "forsok": 1,
+              "felklass": "format",
+              "tokens_in": 0,
+              "tokens_out": 0
+            },
+            {
+              "forsok": 2,
+              "finish_reason": "stop",
+              "reasoning_tokens": 0,
+              "tokens_in": 1800,
+              "tokens_out": 300
+            },
+            {
+              "forsok": 2,
+              "felklass": "format",
+              "tokens_in": 0,
+              "tokens_out": 0
+            }
+          ]
+        }
+      },
+      {
+        "tid": "2026-09-28T18:39:48Z",
+        "typ": "rattelse",
+        "revision": 7,
+        "detaljer": {
+          "nyckel": "erbjudande",
+          "tidigare": "forifylld"
+        }
+      },
+      {
+        "tid": "2026-09-28T18:39:48Z",
+        "typ": "inlamnad",
+        "revision": 8,
+        "detaljer": {
+          "svar": 2
+        }
+      }
+    ],
+    "behov": [
+      {
+        "nyckel": "paminnelser",
+        "citat": "Vi vill att kunderna ska kunna boka service själva och vi behöver påminnelser före besöket.",
+        "fraga": "När behövs påminnelsen, till vem och genom vilken tillåten kontaktväg?",
+        "id": "BEH3_1",
+        "kalla_fraga": "A1",
+        "revision": 3,
+        "status": "oppen",
+        "metod": "regel"
+      }
+    ],
+    "signal": {
+      "id": "ar_4HYIRxaFgnK7:8",
+      "arende_id": "ar_4HYIRxaFgnK7",
+      "kund": {
+        "slug": "gammalt-arende",
+        "namn": "Gammal cykelverkstad TEST"
+      },
+      "revision": 8,
+      "typ": "inlamning",
+      "skapad": "2026-09-28T18:39:48Z"
+    }
+  }
+}

@@ -1,5 +1,7 @@
-/* Kundstart — ett lugnt samtal. Ljus, kylig pappersyta; djupt blågrått bläck; en enda handlingsfärg (hav).
-   Frågan är det bärande elementet: stor serif, mycket luft. Allt annat är tyst. */
+/* Kundstart — ett lugnt samtal och ett synligt arbetsresultat. Ljus, kylig pappersyta; djupt blågrått bläck; en enda
+   handlingsfärg (hav). Frågan är det bärande elementet: stor serif, mycket luft. Översikten "Ditt uppdrag" är ett tyst
+   arbetsblad bredvid samtalet. Lägen skiljs med ord först och färg sedan: kundens val (hav), Digitalas förslag (bärnsten),
+   Digitalas status (grön). */
 
 :root {
   --papper: #f6f7f5;
@@ -7,12 +9,13 @@
   --yta-dis: #eef1ee;
   --black: #1b2430;
   --dis: #5b6570;
-  --dis-ljus: #8a929b;
+  --dis-ljus: #7d868f;
   --linje: #d6dbd9;
   --hav: #0f5c6e;
   --hav-mork: #0b4652;
   --hav-ljus: #e3eef0;
   --sparat: #2e6b45;
+  --sparat-ljus: #e6f1ea;
   --varn: #8a5a00;
   --varn-ljus: #fbf3e3;
   --fel: #a8321e;
@@ -20,7 +23,7 @@
   --serif: var(--font-serif), 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --gutter: 20px;
-  --matt: 38rem;
+  --matt: 40rem;
   --radie: 6px;
   --ease: cubic-bezier(0.25, 1, 0.5, 1);
 }
@@ -59,86 +62,108 @@ a:hover { color: var(--hav-mork); }
 
 button, input, textarea, select { font: inherit; color: inherit; }
 input, textarea, select { font-size: max(16px, 1rem); }
-button, a, [role='button'] { touch-action: manipulation; }
+button, a, [role='button'], summary { touch-action: manipulation; }
 button { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 
 :focus-visible { outline: 3px solid var(--hav); outline-offset: 2px; border-radius: 3px; }
 
 .ram { width: 100%; max-width: var(--matt); margin: 0 auto; padding: 0 var(--gutter); }
 
+/* Ramen: samtal och översikt */
+.app { width: 100%; max-width: 78rem; margin: 0 auto; padding: 0 var(--gutter); }
+.yta { display: block; }
+.samtal-yta { max-width: var(--matt); margin: 0 auto; min-width: 0; }
+@media (min-width: 1024px) {
+  .yta { display: grid; grid-template-columns: minmax(0, var(--matt)) minmax(20rem, 27rem); gap: 3.5rem; justify-content: center; align-items: start; }
+  .samtal-yta { margin: 0; }
+  .uppdrag-yta {
+    position: sticky; top: 1rem; max-height: calc(100dvh - 2rem); overflow-y: auto; overscroll-behavior: contain;
+    background: var(--yta); border: 1px solid var(--linje); border-radius: 10px; padding: 1.25rem 1.25rem 1.5rem;
+  }
+}
+
 /* Sidhuvud */
-.huvud { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: 1.25rem 0 0.75rem; }
+.huvud { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem 1rem; padding: 1rem 0 0.75rem; flex-wrap: wrap; }
 .huvud .ord { font-family: var(--serif); font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; color: var(--black); text-decoration: none; }
 .huvud .ord small { font-family: var(--sans); font-weight: 400; font-size: 0.8125rem; color: var(--dis); margin-left: 0.5rem; letter-spacing: 0; }
-.huvud .kund { font-size: 0.9375rem; color: var(--dis); text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* Flikar: tre moment */
-.flikar { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--linje); margin: 0.5rem 0 1.5rem; overflow-x: auto; }
-.flik { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 0.625rem 0.25rem; color: var(--dis); cursor: pointer; white-space: nowrap; font-size: 0.9375rem; }
-.flik + .flik { margin-left: 0.75rem; }
-.flik[aria-selected='true'] { color: var(--black); border-bottom-color: var(--black); }
-.flik .antal { color: var(--dis-ljus); font-variant-numeric: tabular-nums; margin-left: 0.25rem; }
-@media (hover: hover) and (pointer: fine) { .flik:hover { color: var(--black); } }
+.huvud .kund { font-size: 0.9375rem; color: var(--dis); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 8rem; text-align: right; }
+.uppdrag-knapp { min-height: 40px; padding: 0.375rem 0.75rem; font-size: 0.9375rem; }
+.uppdrag-knapp .antal { display: inline-block; margin-left: 0.4rem; min-width: 1.4em; padding: 0 0.35em; border-radius: 999px; background: var(--hav-ljus); color: var(--hav-mork); font-variant-numeric: tabular-nums; font-size: 0.8125rem; }
 
 /* Rubriker och stycken */
-h1 { font-family: var(--serif); font-weight: 500; font-size: 1.75rem; line-height: 1.2; letter-spacing: -0.01em; margin: 0.5rem 0 0.75rem; }
+h1 { font-family: var(--serif); font-weight: 500; font-size: 1.75rem; line-height: 1.2; letter-spacing: -0.01em; margin: 0.75rem 0 0.75rem; }
 h2 { font-family: var(--serif); font-weight: 500; font-size: 1.375rem; line-height: 1.25; margin: 1.75rem 0 0.5rem; }
 h3 { font-size: 1rem; font-weight: 600; margin: 1.25rem 0 0.375rem; }
 p { margin: 0 0 0.875rem; max-width: 65ch; }
 .dis { color: var(--dis); }
 .liten { font-size: 0.875rem; }
 .tyst { color: var(--dis-ljus); }
+.liten-rubrik { font-family: var(--sans); font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--dis); margin: 1.5rem 0 0.5rem; }
+.etikett { font-weight: 600; }
 
 /* Inledning: det vi redan vet */
-.inledning { margin-bottom: 1.5rem; }
+.inledning { margin-bottom: 1.25rem; }
 .kant { border-top: 1px solid var(--linje); padding: 0.75rem 0; display: grid; grid-template-columns: 1fr; gap: 0.125rem; }
 .kant .rubrik { font-size: 0.8125rem; color: var(--dis); }
 .kant .varde { white-space: pre-wrap; overflow-wrap: anywhere; }
 .kant .kalla { font-size: 0.8125rem; color: var(--dis-ljus); }
 .kant-lista .kant:last-child { border-bottom: 1px solid var(--linje); }
 
-/* Samtalet */
-.dialog { margin: 0 0 1.5rem; padding: 0; list-style: none; }
-.dialog li { padding: 0.625rem 0; border-top: 1px solid var(--linje); }
-.dialog .fraga { font-size: 0.875rem; color: var(--dis); margin: 0 0 0.125rem; }
-.dialog .svar { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
-.dialog .svar.vet-inte { color: var(--dis); font-style: italic; }
-.dialog .andra { margin-top: 0.25rem; }
+/* Samtalsloggen */
+.logg { margin: 0.5rem 0 1.25rem; padding: 0; list-style: none; }
+.tur { padding: 0.875rem 0; border-top: 1px solid var(--linje); display: grid; gap: 0.625rem; }
+.tur .agent .inledning-text { font-size: 0.9375rem; color: var(--dis); margin: 0 0 0.25rem; }
+.tur .agent .fraga { font-family: var(--serif); font-size: 1.0625rem; line-height: 1.35; margin: 0; }
+.tur .kund { justify-self: end; max-width: 92%; background: var(--hav-ljus); color: var(--black); border-radius: 12px 12px 4px 12px; padding: 0.5rem 0.75rem; }
+.tur .kund .svar { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.tur .kund.vet-inte .svar { font-style: italic; color: var(--dis); }
+.tur .kund .meta { display: block; text-align: right; font-size: 0.75rem; color: var(--dis); margin-top: 0.125rem; }
+.andring { font-size: 0.875rem; color: var(--sparat); background: var(--sparat-ljus); border-radius: var(--radie); padding: 0.5rem 0.75rem; margin: 0 0 1rem; }
 
-.aktuell { margin: 0.5rem 0 1.5rem; }
+/* Aktuell fråga */
+.aktuell { margin: 0.5rem 0 1.25rem; }
+.aktuell .inledning-text, .avslut .inledning-text { font-size: 1rem; color: var(--dis); margin: 0 0 0.875rem; border-left: 2px solid var(--linje); padding-left: 0.75rem; max-width: 60ch; }
 .aktuell .fragetext { font-family: var(--serif); font-size: 1.5rem; line-height: 1.3; font-weight: 500; letter-spacing: -0.005em; margin: 0 0 0.5rem; }
 @media (min-width: 640px) { .aktuell .fragetext { font-size: 1.75rem; } }
 .aktuell .varfor { font-size: 0.875rem; color: var(--dis); margin: 0 0 1rem; }
-.aktuell .meddelande { font-size: 0.9375rem; color: var(--dis); margin: 0 0 1rem; border-left: 2px solid var(--linje); padding-left: 0.75rem; }
 
 textarea.svar-falt, textarea.ratt-falt, input.falt {
   width: 100%; display: block; border: 1px solid var(--linje); border-radius: var(--radie); background: var(--yta);
-  padding: 0.75rem 0.875rem; line-height: 1.5; resize: vertical; min-height: 7.5rem;
+  padding: 0.75rem 0.875rem; line-height: 1.5; resize: vertical; min-height: 7rem;
 }
-input.falt { min-height: 0; }
+input.falt { min-height: 44px; padding: 0.5rem 0.75rem; }
 textarea.svar-falt:focus, textarea.ratt-falt:focus, input.falt:focus { outline: 2px solid var(--hav); outline-offset: 0; border-color: var(--hav); }
 
 .alternativ { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 0 0.75rem; }
-.alternativ button { appearance: none; border: 1px solid var(--linje); background: var(--yta); border-radius: 999px; padding: 0.5rem 0.875rem; cursor: pointer; }
+.alternativ button { appearance: none; border: 1px solid var(--linje); background: var(--yta); border-radius: 999px; padding: 0.5rem 0.875rem; cursor: pointer; min-height: 40px; }
 .alternativ button[aria-pressed='true'] { border-color: var(--hav); background: var(--hav-ljus); color: var(--hav-mork); }
 .alternativ button:active { transform: scale(0.98); }
+.tillval-i-fraga { display: grid; gap: 0.75rem; margin: 0 0 1rem; }
 
 .rad { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 0.75rem 0 0; }
-.knapp { appearance: none; border: 1px solid var(--hav); background: var(--hav); color: #fff; border-radius: var(--radie); padding: 0.625rem 1rem; cursor: pointer; min-height: 44px; transition: transform 100ms var(--ease), background 100ms; }
+.rad.tight { flex-wrap: wrap; margin-top: 0.375rem; }
+.rad.tight .falt { flex: 1 1 10rem; min-width: 0; }
+.rad.fler { margin-top: 0.5rem; }
+.knapp { appearance: none; border: 1px solid var(--hav); background: var(--hav); color: #fff; border-radius: var(--radie); padding: 0.625rem 1rem; cursor: pointer; min-height: 44px; transition: transform 100ms var(--ease), background-color 120ms, border-color 120ms; max-width: 100%; text-wrap: balance; }
 .knapp:active { transform: scale(0.98); }
 .knapp:disabled { opacity: 0.55; cursor: default; }
 .knapp.sekundar { background: var(--yta); color: var(--hav-mork); border-color: var(--linje); }
-.knapp.lank { background: none; border-color: transparent; color: var(--dis); padding-left: 0.25rem; padding-right: 0.25rem; text-decoration: underline; text-underline-offset: 0.15em; }
+.knapp.sekundar[aria-pressed='true'] { border-color: var(--hav); background: var(--hav-ljus); }
+.knapp.lank { background: none; border-color: transparent; color: var(--dis); padding-left: 0.25rem; padding-right: 0.25rem; text-decoration: underline; text-underline-offset: 0.15em; white-space: normal; }
+.knapp.lank[aria-pressed='true'] { color: var(--black); font-weight: 600; }
+.knapp.inline { min-height: 0; padding: 0; color: var(--hav); vertical-align: baseline; }
 @media (hover: hover) and (pointer: fine) {
   .knapp:hover { background: var(--hav-mork); }
   .knapp.sekundar:hover { background: var(--yta-dis); }
-  .knapp.lank:hover { background: none; color: var(--black); }
+  .knapp.lank:hover, .knapp.inline:hover { background: none; color: var(--black); }
 }
 
 .status { font-size: 0.875rem; color: var(--dis); min-height: 1.4em; margin: 0.5rem 0 0; }
 .status.sparat { color: var(--sparat); }
 .status.osparad { color: var(--varn); }
 .status.fel { color: var(--fel); }
+.status.vantar::after { content: ''; display: inline-block; width: 0.5em; height: 0.5em; margin-left: 0.4em; border-radius: 50%; background: var(--hav); vertical-align: middle; animation: puls 1.4s ease-in-out infinite; }
+@keyframes puls { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
 
 .not { border-radius: var(--radie); padding: 0.75rem 0.875rem; font-size: 0.9375rem; margin: 1rem 0; }
 .not.varn { background: var(--varn-ljus); color: #5a3b00; }
@@ -147,31 +172,78 @@ textarea.svar-falt:focus, textarea.ratt-falt:focus, input.falt:focus { outline: 
 
 .aterstar { font-size: 0.875rem; color: var(--dis); margin: 1.5rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--linje); }
 
-/* Vår bild */
-.bild-omrade { margin-top: 1.25rem; }
-.bild-rad { border-top: 1px solid var(--linje); padding: 0.75rem 0; }
-.bild-rad:last-child { border-bottom: 1px solid var(--linje); }
+/* Ditt uppdrag */
+.uppdrag h1 { margin-top: 0.25rem; font-size: 1.5rem; }
+.uppdrag-status { font-size: 0.875rem; color: var(--dis); margin: 0 0 0.5rem; }
+.avsnitt { border-top: 1px solid var(--linje); margin-top: 1.25rem; padding-top: 0.25rem; scroll-margin-top: 1rem; }
+.avsnitt > h2 { font-size: 1.1875rem; margin: 0.875rem 0 0.5rem; }
+.grupp { margin-top: 0.5rem; }
+.grupp-rubrik { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--dis); margin: 1rem 0 0.375rem; }
+.tom { color: var(--dis); font-size: 0.9375rem; }
+.bild-rad { border-top: 1px solid var(--yta-dis); padding: 0.625rem 0; }
 .bild-rad .rubrik { font-size: 0.8125rem; color: var(--dis); }
 .bild-rad .varde { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0.125rem 0; }
 .bild-rad .ursprung { font-size: 0.8125rem; color: var(--dis-ljus); }
 .bild-rad .ursprung.ai { color: var(--varn); }
-.bild-rad .rattning { margin-top: 0.5rem; }
+.bild-rad .rattning { margin-top: 0.25rem; }
+.bild-rad .rattning .knapp.lank { min-height: 32px; padding-left: 0; }
+.ny-uppgift { margin-top: 0.5rem; }
+.aterstar-lista { list-style: none; margin: 0.25rem 0 0.75rem; padding: 0; }
+.aterstar-lista li { padding: 0.5rem 0; border-top: 1px solid var(--yta-dis); font-size: 0.9375rem; }
+.aterstar-lista .meta { font-size: 0.8125rem; color: var(--dis); }
+
+/* Tillval */
+.tillval-kort { border: 1px solid var(--linje); border-radius: 8px; background: var(--yta); padding: 0.75rem 0.875rem 0.25rem; margin: 0.5rem 0 0.75rem; }
+.tillval-kort.valt { border-color: var(--hav); box-shadow: inset 3px 0 0 var(--hav); }
+.tillval-kort.kompakt { padding-bottom: 0.125rem; }
+.tv-huvud { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; }
+.tv-namn { margin: 0; font-size: 1rem; font-weight: 600; }
+.tv-kort { font-size: 0.9375rem; color: var(--dis); margin: 0.25rem 0 0.25rem; }
+.tv-rek { font-size: 0.9375rem; background: var(--varn-ljus); color: #4f3500; border-radius: var(--radie); padding: 0.5rem 0.625rem; margin: 0.5rem 0; }
+.tv-val { font-size: 0.9375rem; margin: 0.375rem 0 0; }
+.tv-val .kalla { color: var(--dis); }
+.tv-kontroll { font-size: 0.875rem; background: var(--yta-dis); border-radius: var(--radie); padding: 0.5rem 0.625rem; margin: 0.5rem 0; }
+.tv-kontroll p { margin: 0 0 0.25rem; }
+.tv-kontroll ul { margin: 0.25rem 0; padding-left: 1.1rem; }
+.tv-kontroll .meta { color: var(--dis); font-size: 0.8125rem; margin: 0.25rem 0 0; }
+.tv-knappar { margin-top: 0.5rem; gap: 0.375rem 0.5rem; }
+.tv-knappar .knapp { min-height: 40px; padding: 0.4rem 0.75rem; font-size: 0.9375rem; }
+.tv-falt { margin: 0.625rem 0 0.25rem; }
+.tv-mer { margin: 0.5rem 0 0; font-size: 0.875rem; color: var(--dis); }
+.tv-mer summary { cursor: pointer; padding: 0.375rem 0; }
+.tv-mer p { margin: 0.25rem 0 0.5rem; }
+.chip { display: inline-block; font-size: 0.75rem; line-height: 1.5; padding: 0 0.5rem; border-radius: 999px; border: 1px solid transparent; max-width: 100%; }
+.chip.val { background: var(--hav-ljus); color: var(--hav-mork); }
+.chip.rek { background: var(--varn-ljus); color: #5a3b00; border-color: #ecd9ae; }
+.chip.digitala { background: var(--sparat-ljus); color: var(--sparat); }
+.alla-tillval { margin-top: 0.75rem; }
+.alla-tillval > summary { cursor: pointer; font-weight: 600; padding: 0.5rem 0; min-height: 44px; display: flex; align-items: center; }
+.annat-behov { margin-top: 1rem; }
 
 /* Material */
-.material-lista { list-style: none; margin: 0 0 1.5rem; padding: 0; }
-.material-lista li { border-top: 1px solid var(--linje); padding: 0.75rem 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; }
-.material-lista li:last-child { border-bottom: 1px solid var(--linje); }
-.material-lista .namn { flex: 1 1 14rem; min-width: 0; overflow-wrap: anywhere; }
+.material-lista { list-style: none; margin: 0 0 1rem; padding: 0; }
+.material-lista li { border-top: 1px solid var(--yta-dis); padding: 0.625rem 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; }
+.material-lista .namn { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
 .material-lista .meta { font-size: 0.8125rem; color: var(--dis-ljus); }
 .fil-val { display: block; margin: 0.5rem 0; }
 .fil-val input[type='file'] { display: block; width: 100%; padding: 0.5rem 0; }
 
+/* Mobilarket med Ditt uppdrag */
+dialog.ark { border: 0; padding: 0; margin: 0; width: 100%; max-width: 100%; height: 100dvh; max-height: 100dvh; background: var(--papper); color: var(--black); }
+dialog.ark::backdrop { background: rgba(27, 36, 48, 0.35); }
+.ark-inre { height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--gutter) calc(2rem + env(safe-area-inset-bottom, 0px)); padding-top: env(safe-area-inset-top, 0px); }
+.ark-topp { position: sticky; top: 0; background: var(--papper); padding: 0.5rem 0; border-bottom: 1px solid var(--linje); z-index: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  dialog.ark[open] { animation: upp 220ms var(--ease); }
+  @keyframes upp { from { transform: translateY(24px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+}
+
 /* Bekräftelse */
-.bekraftelse { border-top: 2px solid var(--black); padding-top: 1rem; margin-top: 2rem; }
+.bekraftelse { border-top: 2px solid var(--black); padding-top: 1rem; margin-top: 1.5rem; }
 .bekraftelse ul { padding-left: 1.25rem; margin: 0 0 0.875rem; }
 
 /* Sidfot */
-.fot { margin: 3rem 0 1.5rem; padding-top: 1rem; border-top: 1px solid var(--linje); font-size: 0.8125rem; color: var(--dis-ljus); display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
+.fot { margin: 3rem 0 1.5rem; padding-top: 1rem; border-top: 1px solid var(--linje); font-size: 0.8125rem; color: var(--dis); display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
 
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
