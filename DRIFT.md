@@ -73,8 +73,12 @@ Avläsning 2026-09-28: källkandidat `defcbacc` används på den legitima kundal
 kundrevision är importerad och fjärrkvitterad genom Digitalas ordinarie konsument. Två nya
 verkliga 60-sekunders schemastarter på RTac5/Office58/Digitala d611 gav därefter inget nytt,
 med oförändrad kundakt; detta är temporär kandidatkvalificering, inte aktiv Runtime-drift.
-Deployment och intagsbevis är inte main-integration. Privat reposkydd och draft har separat
-planhinder; ingen synlighets- eller planändring görs. Kontorets gällande plan äger nästa
-införandesteg. `atgarder/intag-20260927` bevaras lokalt som exakt gransknings-/deploybaslinje;
-`atgarder/dokumentkontinuitet-20260928` tillför enbart denna faktanot inför källpublicering.
-Den nya dokumentrevisionen får inte beskrivas som den tidigare koddomens exakta SHA.
+Senare dokumentkontinuitet 2026-09-28 efter r4: deployment och intagsbevis är inte main-integration. Den föregående dokumentkandidaten
+`c2b68d7` publicerades som privat källgren och återlästes; detta är ett daterat utfall, inte
+denna senare dokumentnots nya head. Privat reposkydd och draft har fortsatt planhinder;
+ingen synlighets-/planändring eller main-integration är genomförd. Kontorets gällande plan
+äger nästa införandesteg. `atgarder/intag-20260927` bevaras som exakt gransknings-/deploybaslinje;
+den publicerade `atgarder/dokumentkontinuitet-20260928` tillför enbart denna faktanot och
+är inte den tidigare koddomens exakta SHA. Senaste dokumentpublicering binds separat i
+kontorets privata `drift/plan-kontinuitet-efter-r4/PUBLICERING-EFTER-R4.json` när den är gjord;
+kontorets plan äger fortsatt nästa handling, leveransbeskedet är daterade fakta.
