@@ -12,14 +12,14 @@ const STATUS: Record<string, string> = { inte_undersokt: 'ingen har berört det 
  * Ditt uppdrag: samma ärende som samtalet, som översikt. Varje uppgift kan rättas här; rättelsen sparas i samma ärende
  * och står över äldre tolkningar. Kundens val, Digitalas rekommendationer och Digitalas status hålls isär.
  */
-export default function Uppdrag({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void }) {
+export default function Uppdrag({ vy, setVy, tillSamtalet }: { vy: Vy; setVy: (v: Vy) => void; tillSamtalet?: () => void }) {
   const u = vy.uppdrag;
   const ovriga = vy.tillval.filter((t) => !t.kundval && !t.rekommendation);
   const avstatt = vy.tillval.filter((t) => t.kundval === 'inte_nu');
   return (
     <div className="uppdrag">
       <h1 id="uppdrag-rubrik">Ditt uppdrag</h1>
-      <p className="uppdrag-status">Sparat hos oss {klockslag(vy.arende.uppdaterad)}. {vy.overlamning}</p>
+      <p className="uppdrag-status">Senast ändrat {klockslag(vy.arende.uppdaterad)}. {vy.overlamning}</p>
 
       <section id="avsnitt-mal" className="avsnitt" aria-labelledby="rubrik-mal">
         <h2 id="rubrik-mal">Det ni vill uppnå</h2>
@@ -86,28 +86,29 @@ export default function Uppdrag({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void 
             <ul className="aterstar-lista">{u.research.map((r) => <li key={r.id}><span>{r.fraga}</span>{r.varfor ? <span className="meta"> {r.varfor}</span> : null}</li>)}</ul>
           </>
         )}
-        {u.senare.length > 0 && <Senare vy={vy} setVy={setVy} />}
+        {u.senare.length > 0 && <Senare vy={vy} setVy={setVy} tillSamtalet={tillSamtalet} />}
       </section>
     </div>
   );
 }
 
-function Senare({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void }) {
+function Senare({ vy, setVy, tillSamtalet }: { vy: Vy; setVy: (v: Vy) => void; tillSamtalet?: () => void }) {
   const [fel, setFel] = useState('');
   async function oppna(id: string) {
     try {
       const r = await anropa<{ ok: true; vy: Vy }>('/api/senare', { method: 'POST', body: JSON.stringify({ fraga_id: id, oppna: true }) });
       setVy(r.vy);
       setFel('');
+      tillSamtalet?.();
     } catch (e) {
       setFel((e as AnropsFel).message);
     }
   }
   return (
     <>
-      <h3 className="grupp-rubrik">Ni ville återkomma om</h3>
+      <h3 className="grupp-rubrik">Frågor ni kan ta upp igen</h3>
       <ul className="aterstar-lista">
-        {vy.uppdrag.senare.map((s) => <li key={s.id}><span>{s.text}</span> <button type="button" className="knapp lank inline" onClick={() => void oppna(s.id)}>Svara nu</button></li>)}
+        {vy.uppdrag.senare.map((s) => <li key={s.id}><span>{s.text}</span>{s.not ? <span className="meta"> {s.not}</span> : null} <button type="button" className="knapp lank inline" onClick={() => void oppna(s.id)}>Svara nu</button></li>)}
       </ul>
       {fel && <p className="not fel" role="alert">{fel}</p>}
     </>

@@ -129,7 +129,7 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
               </div>
               <div className={'kund' + (r.svar!.typ === 'vet_inte' ? ' vet-inte' : '')}>
                 <p className="svar">{r.svar!.text}</p>
-                <span className="meta">{klockslag(r.svar!.tid)}{r.svar!.andrad > 0 ? ' · ändrat' : ''}</span>
+                <span className="meta">Sparat {klockslag(r.svar!.tid)}{r.svar!.andrad > 0 ? ' · ändrat' : ''}</span>
               </div>
             </li>
           ))}

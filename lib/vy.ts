@@ -54,7 +54,7 @@ export interface UppdragVy {
   rekommenderade: TillvalVy[];
   aterstar: { nyckel: string; fraga: string; status: string; prio: number }[];
   research: { id: string; fraga: string; varfor: string }[];
-  senare: { id: string; text: string }[];
+  senare: { id: string; text: string; not?: string }[];
 }
 
 export interface Vy {
@@ -133,7 +133,7 @@ export function tillVy(a: Arende): Vy {
   return {
     tackning: t,
     behov: behovMedStatus(a).map(b => ({ id:b.id, nyckel:b.nyckel, citat:b.citat, status:b.status, kan_oppnas:a.fragor.some(f => f.id === b.id && f.status !== 'stalld') && b.status !== 'besvarad' })),
-    overlamning: overforing === 'hamtat' ? 'Aktuell inlämning har hämtats av Digitala. Bearbetningen sker i nästa arbetssteg.' : overforing === 'vantar' ? 'Sparat hos oss och väntar på att hämtas av Digitala.' : overforing === 'andrat_efter' ? 'Ni har ändrat något efter inlämningen. Ändringen är sparad och följer med när Digitala hämtar nästa gång.' : 'Sparat hos oss. Ännu inte inlämnat.',
+    overlamning: overforing === 'hamtat' ? 'Aktuell inlämning har hämtats av Digitala. Bearbetningen sker i nästa arbetssteg.' : overforing === 'vantar' ? 'Inlämnat och sparat hos oss. Väntar på att hämtas av Digitala.' : overforing === 'andrat_efter' ? 'Ni har ändrat något efter inlämningen. Ändringen är sparad och följer med när Digitala hämtar nästa gång.' : 'Sparat hos oss. Ännu inte inlämnat.',
     overforing,
     arende: { id: a.id, kund: { namn: a.kund.namn }, testdialog: a.testdialog, revision: a.revision, kanal: a.kanal, inlamnad, uppdaterad: a.uppdaterad },
     ai: { lage: a.ai.lage, modell: a.ai.lage === 'regelstyrd' ? undefined : a.ai.modell, anrop: a.ai.anrop, status: aiStatus, beskrivning: aiBeskrivning },
@@ -153,7 +153,11 @@ export function tillVy(a: Arende): Vy {
       rekommenderade: tillvalLista.filter((x) => x.rekommendation && !x.kundval),
       aterstar: t.filter((x) => x.status === 'inte_undersokt' || x.status === 'kunden_vet_inte' || x.status === 'atkomst_saknas' || x.status === 'aterkom_senare').sort((x, y) => x.prio - y.prio).slice(0, 12).map((x) => ({ nyckel: x.nyckel, fraga: x.fraga, status: x.status, prio: x.prio })),
       research: (a.research || []).map((r) => ({ id: r.id, fraga: r.fraga, varfor: r.varfor })),
-      senare: a.fragor.filter((f) => f.status === 'senare').map((f) => ({ id: f.id, text: f.text })),
+      senare: [
+        ...a.fragor.filter((f) => f.status === 'senare').map((f) => ({ id: f.id, text: f.text })),
+        // Behov som tolkats som täckta av ett svar kan kunden följa upp med en egen fråga.
+        ...behovMedStatus(a).filter((b) => b.status === 'tackt' && a.fragor.some((f) => f.id === b.id && f.status !== 'stalld' && f.status !== 'senare')).map((b) => ({ id: b.id, text: b.fraga, not: `Tolkat från era ord: ”${b.citat}”` })),
+      ],
     },
     tillval: tillvalLista,
     grupper: [...GRUPPER, 'Egna behov'],

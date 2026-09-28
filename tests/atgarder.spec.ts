@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
-import { aktuellFraga, internHuvud, oppna, skapaArende, svara, vantaPaNyFraga } from './hjalp';
+import { aktuellFraga, internHuvud, oppna, skapaArende, svara, tillbakaTillSamtalet, vantaPaNyFraga, vantaPaSparat, visaUppdrag } from './hjalp';
 const evidence = process.env.KUNDSTART_EVIDENS;
 
 test('Vikskär: naturlig rättelse, tidig inlämning, säker HTML och returfråga i samma ärende', async ({page,request,baseURL}, info) => {
@@ -13,19 +13,18 @@ test('Vikskär: naturlig rättelse, tidig inlämning, säker HTML och returfråg
   const f = await aktuellFraga(page);
   await svara(page,'Rättelse: porträttsessionen är numera 60 minuter, samma pris. Vi delar samma rum och ljusutrustning. Några bilder får inte visas innan rekryteringen är offentlig. Vi behöver påminnelser och vill undersöka Google Ads och Meta, med 3 000 respektive 1 500 kr per månad som planering, inget utgiftsmandat.');
   await vantaPaNyFraga(page,f);
-  await page.getByRole('tab',{name:/Vår bild av er/}).click();
-  await expect(page.locator('.bild-rad',{hasText:'Vad ni erbjuder'}).locator('.varde')).toContainText('60 minuter');
-  await page.getByRole('tab',{name:/Material/}).click();
+  const uppdrag = await visaUppdrag(page);
+  await expect(uppdrag.locator('.bild-rad',{hasText:'Vad ni erbjuder'}).locator('.varde')).toContainText('60 minuter');
   const html = Buffer.from('<!doctype html><html><script>window.EXEKVERAT=true</script><h1>Gammal testsajt</h1><a href="/portratt.html">Porträtt 45 minuter</a><a href="/foretag.html">Företagsuppdrag</a></html>');
-  await page.locator('input[type=file]').setInputFiles({name:'vikskar-gammal.html',mimeType:'text/html',buffer:html});
-  const material = page.locator('.material-lista li',{hasText:'vikskar-gammal.html'});
+  await uppdrag.locator('input[type=file]').setInputFiles({name:'vikskar-gammal.html',mimeType:'text/html',buffer:html});
+  const material = uppdrag.locator('.material-lista li',{hasText:'vikskar-gammal.html'});
   await expect(material).toBeVisible();
-  await expect(material).toContainText('Text extraherad, ännu inte läst');
+  await expect(material).toContainText('texten är utläst men ännu inte genomläst');
   expect(await page.evaluate(()=>Object.hasOwn(window,'EXEKVERAT'))).toBe(false);
-  await page.getByRole('tab',{name:/Samtal/}).click();
+  await tillbakaTillSamtalet(page);
   await page.getByRole('button',{name:'lämna in det ni har hittills'}).click();
   await expect(page.getByRole('heading',{name:/Tack, Vikskär/})).toBeVisible();
-  await expect(page.getByText('Sparat och väntar på att hämtas av Digitala.',{exact:false})).toBeVisible();
+  await expect(page.locator('main.samtal-yta').getByText('Inlämnat och sparat hos oss. Väntar på att hämtas av Digitala.',{exact:false})).toBeVisible();
   const exp = await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`,{headers:internHuvud()});
   expect(exp.status()).toBe(200);
   const bytes = await exp.body(), paket = JSON.parse(bytes.toString());
@@ -50,8 +49,8 @@ test('Vikskär: naturlig rättelse, tidig inlämning, säker HTML och returfråg
   await page.reload();
   const card=page.locator('.aktuell',{hasText:ret.fragor[0].text});await expect(card).toBeVisible();
   await card.locator('textarea').fill('15 minuter är den nya syntetiska testregeln.');
-  await card.getByRole('button',{name:'Spara svar',exact:true}).click();
-  await expect(page.locator('.status.sparat').first()).toContainText('Sparat');
+  await card.getByRole('button',{name:'Skicka svar',exact:true}).click();
+  await vantaPaSparat(page,'15 minuter är den nya syntetiska testregeln.');
   const slut=await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`,{headers:internHuvud()})).json();
   expect(slut.signal.id).not.toBe(paket.signal.id);
   expect(slut.svar.some((s:{text:string})=>s.text.includes('15 minuter'))).toBe(true);
@@ -60,24 +59,7 @@ test('Vikskär: naturlig rättelse, tidig inlämning, säker HTML och returfråg
   if(evidence){writeFileSync(`${evidence}/E2E-${info.project.name}.json`,JSON.stringify({tid:new Date().toISOString(),arende_id:a.arende_id,export:slut,scope:'Faktisk lokal Next-app med verkligt privat Vercel Blob; verifieringskonsumenten gör API-hämtning/kvittens, inte schemalagd Runtime-import.'},null,2));await page.screenshot({path:`${evidence}/E2E-${info.project.name}.png`,fullPage:true});}
 });
 
-test('Vikskär: verklig befintlig gateway med samma GPT-5 mini och nytt schemakontrakt', async ({page,request,baseURL},info) => {
-  test.skip(process.env.KUNDSTART_PROV_AI !== '1','Explicit avgränsat leverantörsprov');
-  const a=await skapaArende(request,baseURL!,'Vikskär Bildrum AI-kontrakt',[],{ai:'gateway'});
-  await oppna(page,a.lank);
-  const f=await aktuellFraga(page);
-  await svara(page,'Vi är en liten foto- och innehållsstudio. Porträtt är 60 minuter och kostar 1 800 kr inklusive moms med 300 kr deposition i testläge. Företagsuppdrag går till Sam och porträtt till Mira. Vi delar rum och ljusutrustning. Bilder av nya kollegor får inte visas innan rekryteringen är offentlig och tillstånd måste finnas separat. Vi vill undersöka Google Ads och Meta med en planeringsbudget, men inget får aktiveras eller spenderas.');
-  await vantaPaNyFraga(page,f);
-  const andra=await aktuellFraga(page);
-  await svara(page,'Porträtt: 60 minuter och 1 800 kr inklusive moms. Bokning kräver samma rum och samma ljusutrustning, så två fotografer får aldrig boka överlappande tid. Företagsbilder kan behöva hållas hemliga till ett uttryckligt datum. Sam godkänner publicering och varje porträtt behöver separat bildtillstånd. Vi behöver en påminnelse och ska utreda Google Ads och Meta, men har bara en syntetisk planeringsbudget. En särskild risk är att en frilansare lämnar över bilder under ett gammalt projektnamn: kopplingen till rätt uppdrag måste kunna kontrolleras före publicering.');
-  await vantaPaNyFraga(page,andra);
-  const p=await (await request.get(`${baseURL}/api/intern/arenden/${a.arende_id}/export`,{headers:internHuvud()})).json();
-  if(evidence)writeFileSync(`${evidence}/GATEWAY-${info.project.name}.json`,JSON.stringify({tid:new Date().toISOString(),arende_id:a.arende_id,ai:p.ai,handelser:p.handelser,behov:p.behov,scope:'Verkligt befintligt Vercel AI Gateway-anrop från lokal app, ingen modellväxling.'},null,2));
-  expect(p.ai.modell).toBe('openai/gpt-5-mini');
-  expect(p.behov.some((b:{metod:string;citat:string})=>b.metod==='ai'&&/projektnamn|frilansare|rätt uppdrag/.test(b.citat))).toBe(true);
-  expect(p.ai.anrop).toBeGreaterThanOrEqual(2);
-  const senaste=p.handelser.filter((h:{typ:string})=>h.typ==='nasta').at(-1);
-  if(senaste.detaljer.fallback){expect(p.ai.aktuell).toBe('reserv');expect(senaste.detaljer.diagnostik.some((d:{avvisade?:unknown[]})=>d.avvisade?.length)).toBe(true);await expect(page.locator('.fot')).toContainText('reservläge');}
-});
+// Det verkliga modellprovet för agenten ligger i ai.spec.ts (samma ärendeflöde, nytt agentkontrakt).
 
 test('Reviewregression: orelaterat pris/metadata bevaras och okänt behov går att följa upp', async ({page,request,baseURL},info) => {
   const a=await skapaArende(request,baseURL!,'Vikskär reviewrättningar',[
@@ -94,16 +76,17 @@ test('Reviewregression: orelaterat pris/metadata bevaras och okänt behov går a
   await svara(page,'Vi behöver påminnelser inför porträttbesök.');
   await vantaPaNyFraga(page,f);
   await page.locator('.aktuell').filter({hasText:'När behövs påminnelsen'}).getByRole('button',{name:'Vet inte',exact:true}).click();
-  await expect(page.locator('.status.sparat').first()).toContainText('Sparat');
-  const details=page.locator('details').filter({hasText:'Vad som fortfarande behöver undersökas'});
-  await details.locator('summary').click();
-  await expect(details).toContainText('ni vet inte ännu');
-  await expect(details.getByRole('button',{name:'Följ upp frågan'})).toBeVisible();
-  await details.getByRole('button',{name:'Följ upp frågan'}).click();
+  await expect(page.locator('.logg .kund.vet-inte').last()).toContainText('Sparat');
+  const oversikt=await visaUppdrag(page);
+  await expect(oversikt.locator('#avsnitt-aterstar')).toContainText('ni vet inte ännu');
+  const senare=oversikt.locator('#avsnitt-aterstar li',{hasText:'När behövs påminnelsen'});
+  await expect(senare.getByRole('button',{name:'Svara nu'})).toBeVisible();
+  await senare.getByRole('button',{name:'Svara nu'}).click();
+  await tillbakaTillSamtalet(page);
   const follow=page.locator('.aktuell').filter({hasText:'När behövs påminnelsen'});
   await expect(follow).toBeVisible();
   await follow.locator('textarea').fill('24 timmar före besöket via den godkända kontaktvägen.');
-  await follow.getByRole('button',{name:'Spara svar',exact:true}).click();
+  await follow.getByRole('button',{name:'Skicka svar',exact:true}).click();
   await expect(follow).toHaveCount(0);
   paket=await (await request.get(`${baseURL}/api/intern/arenden/${a.arende_id}/export`,{headers:internHuvud()})).json();
   await expect(page.getByRole('heading',{name:/Ni skrev att ni inte vet det säkert/})).toHaveCount(0);

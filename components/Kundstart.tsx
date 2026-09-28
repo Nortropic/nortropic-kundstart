@@ -96,7 +96,7 @@ export default function Kundstart({ start }: { start: Vy }) {
             <div className="ark-topp">
               <button type="button" className="knapp lank" onClick={stangUppdrag} autoFocus>Tillbaka till samtalet</button>
             </div>
-            <Uppdrag vy={vy} setVy={setVy} />
+            <Uppdrag vy={vy} setVy={setVy} tillSamtalet={stangUppdrag} />
           </div>
         )}
       </dialog>

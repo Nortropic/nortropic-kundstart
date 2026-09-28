@@ -42,7 +42,7 @@ export default defineConfig({
   webServer: process.env.KUNDSTART_BAS_URL
     ? undefined
     : {
-        command: 'npx next start -p 3111',
+        command: 'npx next start -H 127.0.0.1 -p 3111',
         url: bas + '/',
         reuseExistingServer: true,
         timeout: 60_000,

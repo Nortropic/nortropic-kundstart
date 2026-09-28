@@ -25,9 +25,45 @@ Täckning skiljer `inte_undersokt`, `kunden_vet_inte`, `inte_tillampligt`, `atko
 
 En tydlig sakrättelse om porträtt/session/pris över frågefält bevaras som kundens ord på erbjudanderaden med revisionskälla. Hela citatet bevaras, inga nya numeriska fakta räknas ut. Komplexa eller otydliga rättelser måste fortfarande utredas via behov/returfråga eller Vår bild; reglerna utger sig inte för att förstå all fri text.
 
+## Intervjuagent, Ditt uppdrag och tillval (kandidat 2026-09-28)
+
+Frågebanksledaren är ersatt av en intervjuagent (`lib/agent.ts`). Första frågan är fast (`AG1`, nyckel
+`verksamhetsmal`); därefter formulerar agenten nästa fråga själv och servern ger den nästa `AG<n>`-id. Agentens
+"verktyg" är strukturerade fält i ett strikt JSON-schema, inga funktionsanrop: `uppgifter` (notera_uppgift), `behov`,
+`tillval_val` (satt_tillval), `tillval_rekommendation`, `tackning` (markera_tackning: `kunden_vet_inte`,
+`inte_tillampligt`, `kunden_avstar`) och `research` (bestall_research). Varje post måste bära ett ordagrant citat ur
+det namngivna kundsvaret eller materialet (`kalla_id`); annars avvisas den och avvisningen står i händelsen `nasta`.
+Kundens eget val i översikten står alltid över ett äldre samtalsbaserat val; en rättelse ogiltigförklarar agentens
+tolkning av samma uppgift. Ett agentsvar som kommer efter en nyare revision kasseras (`nasta_forkastad`). Agenten får
+föreslå att samtalet räcker (`samtal_klar`) först när inget prioriterat område står helt orört eller efter 14 frågor.
+
+Exporten `kundstart-export/1` behåller alla tidigare fält och lägger till:
+
+- `kunduppgifter`: `{id,nyckel,rubrik,avsnitt,varde,citat,kalla_typ,kalla_id,kalla_revision,revision,omrade,status:"kunden uppger"}`.
+  Agentens tolkningar (`status:"tolkning"`) går som förut till `fakta_ai`.
+- `tillval`: `{id,beskrivning,kundval,system,not,kalla,citat,fraga_id,revision,rekommendation,digitala,kontroll,historik}`.
+  `id` är ett katalog-id (`doman`, `formular`, `epost`, `bokning`, `betalning`, `crm`, `nyhetsbrev`, `cms`,
+  `search_console`, `foretagsprofil`, `google_ads`, `meta_ads`, `matning`) eller `annat_<n>` för kundens egna behov.
+  `kundval` är `onskat`, `har_system`, `hjalp`, `inte_nu` eller `null`. `kalla` är `kontroll` (kundens knapp) eller
+  `samtal` (agenten, med `citat` och `fraga_id`). `rekommendation` är Digitalas/agentens förslag och aldrig kundens val.
+  `digitala` är Digitalas status (`inkluderat`, `vantar_atkomst`, `anslutet_provat`). `kontroll` är domänkontrollen
+  (DNS/RDAP, daterad). `historik` visar varje ändring, så att borttagning och ändring når Digitalas steg.
+- `research`: agentens beställningar `{id,fraga,varfor,nyckel?,kalla_typ,kalla_id,citat,status:"bestalld",revision,tid,modell}`, högst sex. Kundstart hämtar
+  ingenting; Digitalas research avgör och utför.
+- `tackning_agent`: agentens citatbundna markeringar `{nyckel,lage,citat,fraga_id,revision,tid,giltig}` (vet inte / gäller
+  inte / avstår). `tackning` tar hänsyn till dem.
+- `samtal_klar`: `{revision,tid,meddelande,valjare}` när agenten bedömt att underlaget räcker; nytt svar öppnar samtalet igen.
+- `ai`: även `kostnad_usd` (gatewayns faktiska kostnad), `okand_kostnad_usd`, `senaste_ms` och `budget_skal`.
+
+Interna vägar (Bearer):
+
+- `POST /api/intern/arenden/{id}/tillval` med `{tillval,status,not,kalla,utforare,idempotens}` sätter Digitalas status
+  (`status:null` tar bort den). Administrativt: ingen ny kundrevision, ingen ny signal. `kalla` krävs.
+- `GET /api/intern/budget` visar tak och månadens bokföring (faktisk kostnad, okänd förbrukning, vägrade anrop).
+
 ## AI-kontrakt och ärlig felstatus
 
-Samma standardmodell `openai/gpt-5-mini` behålls. OpenAI-vägen använder strikt JSON-schema och `max_completion_tokens`4000, högst ett till försök med8000. Slutorsak `length`, refusal, transport/HTTP, format och sakligt otillräckligt resultat särskiljs. Slutorsak och kända token sparas även vid misslyckande; timeoutens leverantörsförbrukning är okänd och de summerade token är bara de återrapporterade. En ostyrkt täcknings-/behovsrad avvisas separat med fält/id/källcitathash; den stänger ingen fråga. Andra giltiga källbundna behov bevaras och nästa fråga kommer från den ordinarie kandidaten för just det ostyrkta området. Detta visas som semantiskt reservläge, aldrig som helt lyckad tolkning; råa providerfel och råa modelltexter loggas inte. Permanenta HTTP-fel återförsöks inte. 429/5xx samt format/avkortning/semantik har högst två försök, timeout25sekunder per gatewayanrop; lång Retry-After går till reservväg.
+Samma standardmodell `openai/gpt-5-mini` behålls. Agentturen använder strikt JSON-schema och `max_completion_tokens` 6000, högst ett till försök med 10000 och bara inom 22 sekunder; varje försök reserverar sin kostnad före anropet (se DRIFT.md). Stycket nedan beskriver felklasserna, som gäller oförändrat. Slutorsak `length`, refusal, transport/HTTP, format och sakligt otillräckligt resultat särskiljs. Slutorsak och kända token sparas även vid misslyckande; timeoutens leverantörsförbrukning är okänd och de summerade token är bara de återrapporterade. En ostyrkt täcknings-/behovsrad avvisas separat med fält/id/källcitathash; den stänger ingen fråga. Andra giltiga källbundna behov bevaras och nästa fråga kommer från den ordinarie kandidaten för just det ostyrkta området. Detta visas som semantiskt reservläge, aldrig som helt lyckad tolkning; råa providerfel och råa modelltexter loggas inte. Permanenta HTTP-fel återförsöks inte. 429/5xx samt format/avkortning/semantik har högst två försök, timeout25sekunder per gatewayanrop; lång Retry-After går till reservväg.
 
 Den historiska körningen sparade tre JSON-parsefel utan slutorsak. Avkortning är en möjlig orsak, inte ett fastställt historiskt faktum. Nya prov visar felvägarna separat. JSON-schemat bevisar struktur; kandidat-id och ordagranna källcitat kontrolleras dessutom. Kundens tidigare svar sparas före modellanrop. Gränssnittet visar aktivt, av, reserv eller paus även efter omladdning.
 
@@ -41,7 +77,7 @@ HTML/HTM får tas emot som privat **källdokument**, aldrig som körbar sida. Or
 
 ## Verifiering
 
-`npm run test:core`: isolerade domän-/CAS-/transportkontrakt med märkta providerersättare. `tests/atgarder.spec.ts`: verklig browser och privat Blob mot vald server, inklusive säker gammal HTML,60-minutersrättelse, tidig inlämning och returfråga. `KUNDSTART_PROV_AI=1` aktiverar ett begränsat verkligt gatewayprov. Dessa prov skapar enbart fiktiva testdialoger och skickar inga externa meddelanden. Hostad kundåtkomst och schematisk konsumtion har egna kvitton; lokala prov får inte tillskrivas dem.
+`npm run test:core`: isolerade domän-/CAS-/transportkontrakt med märkta providerersättare, och (`tests/core/agent.cjs`) agentens citatkrav, låset, kassering av sena svar, kostnadsspärren, domänflödet och rättelsens företräde. `tests/atgarder.spec.ts`: verklig browser och privat Blob mot vald server, inklusive säker gammal HTML, 60-minutersrättelse, tidig inlämning och returfråga. `tests/tillval.spec.ts`: tillval, domänflödet, mobilarket och bredvid-layouten. `tests/ai.spec.ts` körs bara med `KUNDSTART_AI=gateway` eller `claude-cli` och gör en verklig agenttur. Dessa prov skapar enbart fiktiva testdialoger och skickar inga externa meddelanden. Hostad kundåtkomst och schematisk konsumtion har egna kvitton; lokala prov får inte tillskrivas dem.
 
 ## Rättelser och bevis efter separat granskning
 
