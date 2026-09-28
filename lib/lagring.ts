@@ -36,6 +36,17 @@ export async function skrivDok<T>(pathname: string, data: T, etag: string): Prom
   return r.etag;
 }
 
+/**
+ * Vercel Blob svarar på två sätt när en annan skrivning hunnit före: villkoret gäller inte längre (412,
+ * BlobPreconditionFailedError) eller en samtidig operation pågår mot samma dokument (409, som SDK:n lämnar som ett
+ * allmänt BlobError med serverns text). Båda betyder "läs om och försök igen", aldrig ett fel för kunden.
+ * Uppmätt på förhandsvisningen 2026-09-28: 409-varianten gav annars 500 när sidans /api/nasta och ett tillvalsval
+ * skrev till samma ärende samtidigt.
+ */
+export function arSamtidigKonflikt(e: unknown): boolean {
+  return e instanceof Error && /conflicting operation|conditional request cannot succeed/i.test(e.message);
+}
+
 /** Läs–ändra–skriv med ETag. `andra` returnerar det nya dokumentet eller null för "ingen ändring". */
 export async function uppdateraDok<T>(
   pathname: string,
@@ -51,7 +62,7 @@ export async function uppdateraDok<T>(
       await skrivDok(pathname, nytt, lasning.etag);
       return { data: nytt, skrev: true };
     } catch (e) {
-      if (e instanceof BlobPreconditionFailedError) {
+      if (e instanceof BlobPreconditionFailedError || arSamtidigKonflikt(e)) {
         console.warn('lagring: villkorad skrivning avvisad, försök %d av %d (%s)', i + 1, forsok, pathname.split('/')[0]);
         await new Promise((r) => setTimeout(r, 60 * (i + 1) + Math.random() * 80));
         continue;

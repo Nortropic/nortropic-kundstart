@@ -37,14 +37,15 @@ händelsen `nasta`. Ett tillval blir kundens val bara när kundens verifierade c
 modellen angav; utan citat blir det högst en rekommendation. En uppgift vars citat säger att kunden inte vet
 ("vi vet inte …") registreras som `kunden_vet_inte`, inte som känd uppgift. Research om domänens öppna uppgifter
 avvisas (domänflödet gör det) liksom research formulerad som fråga till kunden (ni/er), som hör hemma i samtalet.
-Kundens eget val i översikten står alltid över ett äldre samtalsbaserat val; en rättelse ogiltigförklarar agentens
+Samtidiga skrivningar som Vercel Blob avvisar (412 villkorsfel eller 409 "conflicting operation") läses om och försöks igen, högst sex gånger. Kundens eget val i översikten står alltid över ett äldre samtalsbaserat val; en rättelse ogiltigförklarar agentens
 tolkning av samma uppgift. Ett agentsvar som kommer efter en nyare revision kasseras (`nasta_forkastad`). Agenten får
 föreslå att samtalet räcker (`samtal_klar`) först när inget prioriterat område står helt orört eller efter 14 frågor.
 
 Exporten `kundstart-export/1` behåller alla tidigare fält och lägger till:
 
-- `kunduppgifter`: `{id,nyckel,rubrik,avsnitt,varde,citat,kalla_typ,kalla_id,kalla_revision,revision,omrade,status:"kunden uppger"}`.
-  Agentens tolkningar (`status:"tolkning"`) går som förut till `fakta_ai`.
+- `kunduppgifter`: `{id,nyckel,rubrik,avsnitt,varde,citat,kalla_typ,kalla_id,kalla_revision,revision,omrade,tacker,status:"kunden uppger"}`.
+  `tacker` är täckningsstödets nyckel som uppgiften helt eller delvis besvarar (eller `null`); den styr täckning och
+  område när agenten gett uppgiften en egen nyckel. Agentens tolkningar (`status:"tolkning"`) går som förut till `fakta_ai`.
 - `tillval`: `{id,beskrivning,kundval,system,not,kalla,citat,fraga_id,revision,rekommendation,digitala,kontroll,historik}`.
   `id` är ett katalog-id (`doman`, `formular`, `epost`, `bokning`, `betalning`, `crm`, `nyhetsbrev`, `cms`,
   `search_console`, `foretagsprofil`, `google_ads`, `meta_ads`, `matning`) eller `annat_<n>` för kundens egna behov.

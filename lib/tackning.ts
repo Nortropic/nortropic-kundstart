@@ -62,14 +62,14 @@ export function tackning(a: Arende) {
     if (s) besked.push({ status: s.typ === 'vet_inte' ? 'kunden_vet_inte' : s.typ === 'ej_tillampligt' ? 'inte_tillampligt' : s.typ === 'atkomst_saknas' ? 'atkomst_saknas' : 'uppgift_finns', revision: s.revision, kalla: s.fraga_id });
     const r = [...a.rattelser].reverse().find(r => r.nyckel === f.nyckel);
     if (r) besked.push({ status: 'uppgift_finns', revision: r.revision + 0.5, kalla: `rattelse:${r.revision}` });
-    const u = [...(a.uppgifter || [])].reverse().find(u => u.giltig && u.status === 'kunden uppger' && u.nyckel === f.nyckel);
+    const u = [...(a.uppgifter || [])].reverse().find(u => u.giltig && u.status === 'kunden uppger' && (u.nyckel === f.nyckel || u.tacker === f.nyckel));
     if (u) besked.push({ status: 'uppgift_finns', revision: u.kalla_revision + 0.25, kalla: `${u.kalla_id} (citat ${u.id})` });
     const m = [...(a.tackning_agent || [])].reverse().find(m => m.giltig && m.nyckel === f.nyckel);
     if (m) besked.push({ status: m.lage, revision: m.revision + 0.25, kalla: `${m.fraga_id} (citat)` });
     const senast = besked.sort((x, y) => y.revision - x.revision)[0];
     const g = a.fragor.find(g => g.nyckel === f.nyckel);
     const status: TackningStatus = senast ? senast.status
-      : a.fakta_ai.some(x => x.nyckel === f.nyckel && x.giltig) || (a.uppgifter || []).some(x => x.giltig && x.status === 'tolkning' && x.nyckel === f.nyckel) ? 'tolkning_att_kontrollera'
+      : a.fakta_ai.some(x => x.nyckel === f.nyckel && x.giltig) || (a.uppgifter || []).some(x => x.giltig && x.status === 'tolkning' && (x.nyckel === f.nyckel || x.tacker === f.nyckel)) ? 'tolkning_att_kontrollera'
       : a.fakta_forifyllda.some(x => x.nyckel === f.nyckel && x.status !== 'okänt') ? 'forifylld_att_kontrollera'
       : (a.research || []).some(x => x.nyckel === f.nyckel) ? 'undersoks_av_digitala'
       : g?.status === 'senare' ? 'aterkom_senare' : 'inte_undersokt';

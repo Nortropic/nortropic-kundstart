@@ -61,8 +61,8 @@ test('Agentens schema är strikt; varje notering kräver ordagrant citat ur kund
   const ut = AG.validera(agentUt({
     fraga: { text: 'Vilket system?', nyckel: 'system', omrade: 'D', varfor: 'x', form: 'val', alternativ: ['Bara ett'], tillval: [] },
     uppgifter: [
-      { nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '' },
-      { nyckel: 'hittepa', rubrik: 'Påhitt', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi har tre butiker.', kalla_id: 'AG1', sammanfattning: '' },
+      { nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '', tacker: '' },
+      { nyckel: 'hittepa', rubrik: 'Påhitt', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi har tre butiker.', kalla_id: 'AG1', sammanfattning: '', tacker: '' },
     ],
     tillval: [
       kundensBesked('bokning', 'onskat', 'Vi vill att kunderna ska kunna boka service själva.'),
@@ -87,7 +87,7 @@ test('Agentens schema är strikt; varje notering kräver ordagrant citat ur kund
 test('En agenttur tillämpar kundens tillval, rekommendation, vet inte och research; frågan får serverns id', async () => {
   const a = await medSvar();
   const anrop = gateway(agentUt({
-    uppgifter: [{ nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '' }],
+    uppgifter: [{ nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '', tacker: '' }],
     tillval: [kundensBesked('bokning', 'onskat', 'Vi vill att kunderna ska kunna boka service själva.'), rekommendation('foretagsprofil', 'Lokala kunder söker på kartan.')],
     tackning: [{ nyckel: 'data', lage: 'kunden_vet_inte', citat: 'Vi vet inte vad vi har för statistik.', kalla_id: 'AG1' }],
     research: [{ fraga: 'Hur tar verkstäder i Umeå emot bokningar?', varfor: 'nivå', nyckel: '', citat: 'cykelverkstad i Umeå', kalla_id: 'AG1' }],
@@ -116,8 +116,8 @@ test('Kundens citat avgör tillvalet; domänresearch, frågor till kunden och "v
   const k = AG.byggKontext(a, { kanda: [], tackning: [], utlosta: [], aterstarAnrop: 10 });
   const ut = AG.validera(agentUt({
     uppgifter: [
-      { nyckel: 'data', rubrik: 'Statistik', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi vet inte vad vi har för statistik.', kalla_id: 'AG1', sammanfattning: '' },
-      { nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '' },
+      { nyckel: 'data', rubrik: 'Statistik', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi vet inte vad vi har för statistik.', kalla_id: 'AG1', sammanfattning: '', tacker: '' },
+      { nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '', tacker: '' },
     ],
     tillval: [
       // Modellen kallar det rekommendation men citerar kundens eget önskemål: kundens ord vinner.
@@ -140,6 +140,20 @@ test('Kundens citat avgör tillvalet; domänresearch, frågor till kunden och "v
   assert.deepEqual(ut.tackning.map((t) => t.nyckel + ':' + t.lage), ['data:kunden_vet_inte']);
   assert.deepEqual(ut.research.map((r) => r.fraga), ['Hur tar cykelverkstäder i Umeå emot bokningar på nätet?']);
   assert.deepEqual(ut.avvisade.map((x) => x.orsak).sort(), ['citat_saknas_i_kundens_svar', 'domanen_kontrolleras_av_servern', 'fraga_till_kunden_inte_research'].sort());
+});
+
+test('En uppgift med egen nyckel täcker täckningsstödets nyckel och hamnar under dess område', async () => {
+  const a = await medSvar();
+  const fore = T.tackning(a).find((t) => t.nyckel === 'erbjudande').status;
+  gateway(agentUt({ uppgifter: [{ nyckel: 'service_utbud', rubrik: 'Service', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '', tacker: 'erbjudande' }] }));
+  await A.nasta(a.id);
+  const b = await A.lasArende(a.id);
+  assert.equal(b.uppgifter.find((u) => u.nyckel === 'service_utbud').tacker, 'erbjudande');
+  assert.notEqual(fore, 'uppgift_finns');
+  assert.equal(T.tackning(b).find((t) => t.nyckel === 'erbjudande').status, 'uppgift_finns');
+  const omrade = require('../../lib/bank.ts').BANK.grund.find((g) => g.nyckel === 'erbjudande').omrade;
+  assert.equal(A.bild(b).find((r) => r.nyckel === 'service_utbud').omrade, omrade, 'raden grupperas under erbjudandets område, inte Övrigt');
+  assert.equal(A.exportPaket(b).kunduppgifter.find((u) => u.nyckel === 'service_utbud').tacker, 'erbjudande');
 });
 
 test('Ett äldre uttalande i samtalet ändrar aldrig ett nyare val i kontrollerna', async () => {
@@ -184,7 +198,7 @@ test('Digitalas tillvalsstatus visas för kunden men ändrar inte kundrevisionen
 
 test('Sent modellsvar kasseras när kunden rättar under väntan; kostnaden bokförs ändå', async () => {
   const a = await medSvar();
-  gateway(agentUt({ uppgifter: [{ nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '' }] }), {
+  gateway(agentUt({ uppgifter: [{ nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '', tacker: '' }] }), {
     fore: async () => { await A.registreraRattelse(a.id, { nyckel: 'erbjudande', varde: 'Cykelservice och uthyrning', idempotens: 'SENRATT01' }); },
   });
   const r = await A.nasta(a.id);
@@ -292,7 +306,7 @@ test('Domänflödet sparar val och kontroll i samma ärende och syns i översikt
 
 test('Rättelse i översikten vinner över agentens äldre tolkning och syns i samma ärende', async () => {
   const a = await medSvar();
-  gateway(agentUt({ uppgifter: [{ nyckel: 'ton', rubrik: 'Ton', avsnitt: 'verksamhet', slag: 'tolkning', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: 'Lokal och folklig' }] }));
+  gateway(agentUt({ uppgifter: [{ nyckel: 'ton', rubrik: 'Ton', avsnitt: 'verksamhet', slag: 'tolkning', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: 'Lokal och folklig', tacker: '' }] }));
   await A.nasta(a.id);
   let b = await A.lasArende(a.id);
   assert.equal(A.bild(b).find((x) => x.nyckel === 'ton').typ, 'ai');
@@ -309,6 +323,22 @@ test('Gatewaysvarets slutorsak, token och kostnad skiljs även vid fel', () => {
   }
   const ok = MO.lasGatewaySvar({ choices: [{ finish_reason: 'stop', message: { content: '{"a":1}' } }], usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0001 } });
   assert.deepEqual([ok.tokens_in, ok.tokens_out, ok.kostnad_usd], [10, 5, 0.0001]);
+});
+
+test('Samtidig skrivning som Vercel Blob avvisar med 409 (conflicting operation) försöks om i stället för att ge 500', async () => {
+  const a = await arende();
+  const L = require('../../lib/lagring.ts');
+  const put = blob.put; let kast = 0;
+  blob.put = async (p, body, o) => {
+    if (p.startsWith('arenden/') && o.ifMatch && kast < 2) { kast++; throw new Error('Vercel Blob: The conditional request cannot succeed due to a conflicting operation against this resource.'); }
+    return put(p, body, o);
+  };
+  try {
+    const r = await A.sattTillval(a.id, { tillval: 'bokning', kundval: 'onskat', idempotens: 'KONFLIKT409' });
+    assert.equal(kast, 2); assert(r.ny);
+    assert.equal((await A.lasArende(a.id)).tillval.find((t) => t.id === 'bokning').kundval, 'onskat');
+    assert.equal(L.arSamtidigKonflikt(new Error('Vercel Blob: Access denied')), false, 'andra fel försöks inte om');
+  } finally { blob.put = put; }
 });
 
 test('Ärende lagrat av den driftsatta versionen (133f37f) går att visa, exportera och fortsätta med agenten', async () => {
@@ -330,8 +360,8 @@ test('Ärende lagrat av den driftsatta versionen (133f37f) går att visa, export
   ({ a } = await A.registreraSvar(id, { fraga_id: 'BOK1', text: 'Service, däckbyte och vinterförvaring.', typ: 'text', idempotens: 'NYKOD0001' }));
   const anrop = gateway(agentUt({
     uppgifter: [
-      { nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'A1', sammanfattning: '' },
-      { nyckel: 'plats', rubrik: 'Plats', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Umeå', kalla_id: 'A1', sammanfattning: '' },
+      { nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'A1', sammanfattning: '', tacker: '' },
+      { nyckel: 'plats', rubrik: 'Plats', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Umeå', kalla_id: 'A1', sammanfattning: '', tacker: '' },
     ],
     tillval: [kundensBesked('bokning', 'onskat', 'Vi vill att kunderna ska kunna boka service själva', 'A1')],
   }));

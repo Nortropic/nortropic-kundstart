@@ -184,7 +184,8 @@ export interface BildRad {
 const MAL_NYCKLAR = new Set(['verksamhetsmal', 'bra_forfragan']);
 
 function omradeFor(a: Arende, nyckel: string, standard = ''): string {
-  return a.fragor.find((f) => f.nyckel === nyckel)?.omrade || a.fakta_forifyllda.find((f) => f.nyckel === nyckel)?.omrade || BANK.grund.find((g) => g.nyckel === nyckel)?.omrade || standard;
+  const tacker = (a.uppgifter || []).filter((u) => u.nyckel === nyckel && u.tacker && u.tacker !== nyckel).at(-1)?.tacker;
+  return a.fragor.find((f) => f.nyckel === nyckel)?.omrade || a.fakta_forifyllda.find((f) => f.nyckel === nyckel)?.omrade || BANK.grund.find((g) => g.nyckel === nyckel)?.omrade || (tacker ? BANK.grund.find((g) => g.nyckel === tacker)?.omrade : '') || standard;
 }
 
 /**
@@ -598,7 +599,7 @@ function tillampaAgent(a: Arende, ut: AgentUtdata, bas: number, modell?: string)
     const lista = (a.uppgifter ??= []);
     if (lista.some((x) => x.giltig && x.nyckel === u.nyckel && x.varde === u.varde && x.status === u.status)) continue;
     for (const x of lista) if (x.giltig && x.nyckel === u.nyckel && x.status === u.status) { x.giltig = false; x.forkastad_skal = `ersatt av U${rev}_${ix + 1}`; }
-    lista.push({ id: `U${rev}_${ix + 1}`, nyckel: u.nyckel, rubrik: u.rubrik, avsnitt: u.avsnitt, status: u.status, varde: u.varde, citat: u.citat, kalla_typ: u.kalla_typ, kalla_id: u.kalla_id, kalla_revision: u.kalla_revision, bas_revision: bas, revision: rev, tid: nu(), giltig: true, modell });
+    lista.push({ id: `U${rev}_${ix + 1}`, nyckel: u.nyckel, rubrik: u.rubrik, avsnitt: u.avsnitt, status: u.status, varde: u.varde, citat: u.citat, kalla_typ: u.kalla_typ, kalla_id: u.kalla_id, kalla_revision: u.kalla_revision, bas_revision: bas, revision: rev, tid: nu(), giltig: true, modell, tacker: u.tacker });
     nyaUppgifter++;
   }
   let behov = 0;
@@ -956,7 +957,7 @@ export function exportPaket(a: Arende) {
   const tolkningar = (a.uppgifter || []).filter((u) => u.giltig && u.status === 'tolkning').map((u) => ({ nyckel: u.nyckel, varde: u.varde, status: 'tolkning', kalla: `kundstart AI rev ${u.bas_revision} (${u.modell || 'modell'}) ur ${u.kalla_id}`, omrade: omradeAv(u.nyckel, u.avsnitt === 'mal' ? 'A' : 'H'), datum: u.tid.slice(0, 10) }));
   const faktaAi = [...a.fakta_ai.filter((f) => f.giltig).map((f) => ({ nyckel: f.nyckel, varde: f.varde, status: f.status, kalla: f.kalla, omrade: f.omrade, datum: f.datum })), ...tolkningar];
   const rattelserFakta = a.rattelser.map((r) => ({ nyckel: r.nyckel, varde: r.varde, status: 'kunden uppger', kalla: `kundstart rättelse rev ${r.revision}`, omrade: omradeAv(r.nyckel), datum: r.mottaget.slice(0, 10), tidigare: r.tidigare }));
-  const kunduppgifter = (a.uppgifter || []).filter((u) => u.giltig && u.status === 'kunden uppger').map((u) => ({ id: u.id, nyckel: u.nyckel, rubrik: u.rubrik, avsnitt: u.avsnitt, varde: u.varde, citat: u.citat, kalla_typ: u.kalla_typ, kalla_id: u.kalla_id, kalla_revision: u.kalla_revision, revision: u.revision, omrade: omradeAv(u.nyckel, u.avsnitt === 'mal' ? 'A' : 'H'), status: 'kunden uppger' }));
+  const kunduppgifter = (a.uppgifter || []).filter((u) => u.giltig && u.status === 'kunden uppger').map((u) => ({ id: u.id, nyckel: u.nyckel, rubrik: u.rubrik, avsnitt: u.avsnitt, varde: u.varde, citat: u.citat, kalla_typ: u.kalla_typ, kalla_id: u.kalla_id, kalla_revision: u.kalla_revision, revision: u.revision, omrade: omradeAv(u.nyckel, u.avsnitt === 'mal' ? 'A' : 'H'), tacker: u.tacker || null, status: 'kunden uppger' }));
   return {
     schema: 'kundstart-export/1',
     exporterad: nu(),

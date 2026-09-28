@@ -178,6 +178,8 @@ export interface Uppgift {
   giltig: boolean;
   forkastad_skal?: string;
   modell?: string;
+  /** Täckningsstödets nyckel som uppgiften helt eller delvis besvarar (styr täckning och område i översikten). */
+  tacker?: string;
 }
 
 export type TillvalKundval = 'onskat' | 'har_system' | 'hjalp' | 'inte_nu';

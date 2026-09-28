@@ -60,8 +60,9 @@ export const AGENT_SCHEMA = {
           citat: { type: 'string' },
           kalla_id: { type: 'string' },
           sammanfattning: { type: 'string' },
+          tacker: { type: 'string' },
         },
-        required: ['nyckel', 'rubrik', 'avsnitt', 'slag', 'citat', 'kalla_id', 'sammanfattning'],
+        required: ['nyckel', 'rubrik', 'avsnitt', 'slag', 'citat', 'kalla_id', 'sammanfattning', 'tacker'],
       },
     },
     behov: {
@@ -121,7 +122,7 @@ export const AGENT_SCHEMA = {
 const Rå = z.object({
   aterkoppling: z.string(),
   fraga: z.object({ text: z.string(), nyckel: z.string(), omrade: z.enum(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']), varfor: z.string(), form: z.enum(['oppen', 'val', 'tillval']), alternativ: z.array(z.string()), tillval: z.array(z.string()) }),
-  uppgifter: z.array(z.object({ nyckel: z.string(), rubrik: z.string(), avsnitt: z.enum(['mal', 'verksamhet']), slag: z.enum(['kundens_ord', 'tolkning']), citat: z.string(), kalla_id: z.string(), sammanfattning: z.string() })),
+  uppgifter: z.array(z.object({ nyckel: z.string(), rubrik: z.string(), avsnitt: z.enum(['mal', 'verksamhet']), slag: z.enum(['kundens_ord', 'tolkning']), citat: z.string(), kalla_id: z.string(), sammanfattning: z.string(), tacker: z.string() })),
   behov: z.array(z.object({ nyckel: z.string(), citat: z.string(), kalla_id: z.string(), fraga: z.string() })),
   tillval: z.array(z.object({ tillval: z.string(), grund: z.enum(['kundens_besked', 'rekommendation']), kundval: z.enum(['onskat', 'har_system', 'hjalp', 'inte_nu', 'ingen']), system: z.string(), citat: z.string(), kalla_id: z.string(), motivering: z.string() })),
   tackning: z.array(z.object({ nyckel: z.string(), lage: z.enum(['kunden_vet_inte', 'inte_tillampligt', 'kunden_avstar']), citat: z.string(), kalla_id: z.string() })),
@@ -163,7 +164,7 @@ export function systemText(): string {
     'SANNING OCH KÄLLOR',
     'Varje notering ska ha ett citat som kopieras tecken för tecken ur ett av kundens svar i SAMTALET (kalla_id = svarets fråge-id), ur ett materialutdrag (kalla_id = material-id) eller, för research, ur KÄNDA UPPGIFTER (kalla_id = "kand"). Förkorta eller skriv aldrig om ett citat.',
     'notera_uppgift med slag "kundens_ord" när citatet i sig är uppgiften; slag "tolkning" när du sammanfattar (sammanfattning ≤ 200 tecken). Citera den del av svaret som bär just den uppgiften, aldrig hela svaret, och upprepa inte något som redan står under KÄNDA UPPGIFTER med samma innebörd.',
-    'Använd täckningsstödets nycklar (verksamhetsmal, erbjudande, nulage, besokare, efter_inskick, system, kontoagare, material, hittar, data, ramar …) när uppgiften hör dit; hitta bara på en ny kort nyckel med a–z och understreck för något som inte passar någon av dem. avsnitt "mal" för vad kunden vill uppnå, annars "verksamhet".',
+    'nyckel: täckningsstödets nyckel (verksamhetsmal, erbjudande, nulage, besokare, efter_inskick, system, kontoagare, material, hittar, data, ramar …) när uppgiften är just den; annars en kort egen nyckel med a–z och understreck. tacker: den nyckel i TÄCKNINGSSTÖDET som uppgiften helt eller delvis besvarar (samma som nyckel när de är lika), annars tom. Ett erbjudande till föreningar har till exempel en egen nyckel men tacker "erbjudande". avsnitt "mal" för vad kunden vill uppnå, annars "verksamhet".',
     'Hitta aldrig på fakta, fyll aldrig luckor, gör aldrig en rekommendation till kundens val. Kundens uppgifter behöver inte vara oberoende verifierade för att få användas som kundens uppgifter.',
     '"Vet inte" är ett ärligt okänt: när kunden säger att de inte vet något, använd markera_tackning med kunden_vet_inte på rätt täckningsnyckel (inte notera_uppgift) och låt det vara okänt. Skilj det från inte_tillampligt och kunden_avstar.',
     'Beställ inte research om kundens domän; servern läser domänens öppna uppgifter när tillvalet registreras. Beställ inte samma research två gånger. Research är det Digitala själva undersöker; skriv den i tredje person ("Vilka bokningstjänster …"), aldrig som en fråga till kunden (sådant frågar du i samtalet).',
@@ -281,7 +282,7 @@ export interface Avvisad { verktyg: string; orsak: string; citat_sha256?: string
 export interface AgentUtdata {
   aterkoppling: string;
   fraga: { text: string; nyckel: string; omrade: string; varfor: string; form: 'oppen' | 'val' | 'tillval'; alternativ: string[]; tillval: string[] } | null;
-  uppgifter: { nyckel: string; rubrik: string; avsnitt: 'mal' | 'verksamhet'; status: 'kunden uppger' | 'tolkning'; varde: string; citat: string; kalla_typ: 'svar' | 'material'; kalla_id: string; kalla_revision: number }[];
+  uppgifter: { nyckel: string; rubrik: string; avsnitt: 'mal' | 'verksamhet'; status: 'kunden uppger' | 'tolkning'; varde: string; citat: string; kalla_typ: 'svar' | 'material'; kalla_id: string; kalla_revision: number; tacker?: string }[];
   behov: { nyckel: string; citat: string; kalla_id: string; fraga: string }[];
   tillval_val: { tillval: string; kundval: 'onskat' | 'har_system' | 'hjalp' | 'inte_nu'; system: string; citat: string; kalla_id: string; kalla_revision: number }[];
   tillval_rekommendation: { tillval: string; motivering: string }[];
@@ -319,12 +320,13 @@ export function validera(rå: unknown, k: AgentKontext): AgentUtdata | null {
     if (!nyckel) { avvisa('notera_uppgift', 'ogiltig_nyckel', u.citat); continue; }
     if (!s && !m) { avvisa('notera_uppgift', 'citat_saknas_i_kallan', u.citat, u.kalla_id); continue; }
     // Kundens "vi vet inte …" är ett ärligt okänt: det täcker inte området och blir en markering i stället för en uppgift.
-    if (s && u.slag === 'kundens_ord' && VET_INTE.test(u.citat)) { vetInteUppgifter.push({ nyckel: u.nyckel, lage: 'kunden_vet_inte', citat: u.citat, kalla_id: u.kalla_id }); continue; }
+    const tacker = k.bankNycklar.has(u.tacker) ? u.tacker : k.bankNycklar.has(nyckel) ? nyckel : undefined;
+    if (s && u.slag === 'kundens_ord' && VET_INTE.test(u.citat)) { vetInteUppgifter.push({ nyckel: tacker || u.nyckel, lage: 'kunden_vet_inte', citat: u.citat, kalla_id: u.kalla_id }); continue; }
     const tolkning = u.slag === 'tolkning';
     const varde = tolkning ? rensa(u.sammanfattning, 300) : u.citat.trim();
     if (!varde) { avvisa('notera_uppgift', 'tom_sammanfattning', u.citat); continue; }
     if (uppgifter.some((x) => x.nyckel === nyckel && x.varde === varde)) continue;
-    uppgifter.push({ nyckel, rubrik: rensa(u.rubrik, 80) || nyckel.replace(/_/g, ' '), avsnitt: u.avsnitt, status: tolkning ? 'tolkning' : 'kunden uppger', varde: varde.slice(0, 1500), citat: u.citat.trim().slice(0, 1500), kalla_typ: s ? 'svar' : 'material', kalla_id: u.kalla_id, kalla_revision: (s || m)!.revision });
+    uppgifter.push({ nyckel, rubrik: rensa(u.rubrik, 80) || nyckel.replace(/_/g, ' '), avsnitt: u.avsnitt, status: tolkning ? 'tolkning' : 'kunden uppger', varde: varde.slice(0, 1500), citat: u.citat.trim().slice(0, 1500), kalla_typ: s ? 'svar' : 'material', kalla_id: u.kalla_id, kalla_revision: (s || m)!.revision, tacker });
   }
 
   const behov: AgentUtdata['behov'] = [];
