@@ -33,9 +33,9 @@ Digitala (kundmappen, INTERVJU.json)  ◀── verktyg/kundstart.py hamta ─�
   visar drift. Banken är stöd; källbundna behov och revisionsbundna returfrågor kan tillkomma i samma ärende. Se KUNDSTART-KONTRAKT.md.
 - **Intervjuagenten** (`lib/agent.ts`, körs från `nasta()` i `lib/arende.ts`) får ärendets kända uppgifter, täckning,
   tillval och senaste svar, och svarar med ett strikt JSON-schema: nästa fråga plus ett fåtal "verktyg" som strukturerade
-  listor (`notera_uppgift`, `notera_behov`, `satt_tillval`, `rekommendera_tillval`, `markera_tackning`,
-  `bestall_research`). Servern tilldelar alla id, kräver att varje notering citerar kundens ord ordagrant ur ett namngivet
-  svar eller material, och avvisar resten synligt i händelseloggen. En modellrespons som kommer efter en nyare ändring
+  listor (`uppgifter`, `behov`, `tillval`, `tackning`, `research`). Servern tilldelar alla id, kräver att varje notering
+  citerar kundens ord ordagrant ur ett namngivet svar eller material, och avvisar resten synligt i händelseloggen. Ett
+  tillval blir kundens val bara när kundens eget citat bär det; utan citat kan det bara bli en rekommendation. En modellrespons som kommer efter en nyare ändring
   (svar, rättelse, tillvalsval) kasseras; kundens senaste ord vinner. Ingen HTML eller kod från modellen körs hos kunden.
 - **Tillval** (`lib/tillval.ts`): domän, formulär/bilagor, e-postmottagning, bokning, betalning/deposition, CRM,
   nyhetsbrev, CMS, Search Console, Google-företagsprofil, Google Ads, Meta-annonser och analys, plus kundens egna behov.

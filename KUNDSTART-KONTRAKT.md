@@ -30,9 +30,13 @@ En tydlig sakrättelse om porträtt/session/pris över frågefält bevaras som k
 Frågebanksledaren är ersatt av en intervjuagent (`lib/agent.ts`). Första frågan är fast (`AG1`, nyckel
 `verksamhetsmal`); därefter formulerar agenten nästa fråga själv och servern ger den nästa `AG<n>`-id. Agentens
 "verktyg" är strukturerade fält i ett strikt JSON-schema, inga funktionsanrop: `uppgifter` (notera_uppgift), `behov`,
-`tillval_val` (satt_tillval), `tillval_rekommendation`, `tackning` (markera_tackning: `kunden_vet_inte`,
-`inte_tillampligt`, `kunden_avstar`) och `research` (bestall_research). Varje post måste bära ett ordagrant citat ur
-det namngivna kundsvaret eller materialet (`kalla_id`); annars avvisas den och avvisningen står i händelsen `nasta`.
+`tillval` (en post per berört tillval med `grund` kundens_besked eller rekommendation), `tackning` (markera_tackning:
+`kunden_vet_inte`, `inte_tillampligt`, `kunden_avstar`) och `research` (bestall_research). Varje post måste bära ett
+ordagrant citat ur det namngivna kundsvaret eller materialet (`kalla_id`); annars avvisas den och avvisningen står i
+händelsen `nasta`. Ett tillval blir kundens val bara när kundens verifierade citat bär det, oavsett vilken grund
+modellen angav; utan citat blir det högst en rekommendation. En uppgift vars citat säger att kunden inte vet
+("vi vet inte …") registreras som `kunden_vet_inte`, inte som känd uppgift. Research om domänens öppna uppgifter
+avvisas (domänflödet gör det) liksom research formulerad som fråga till kunden (ni/er), som hör hemma i samtalet.
 Kundens eget val i översikten står alltid över ett äldre samtalsbaserat val; en rättelse ogiltigförklarar agentens
 tolkning av samma uppgift. Ett agentsvar som kommer efter en nyare revision kasseras (`nasta_forkastad`). Agenten får
 föreslå att samtalet räcker (`samtal_klar`) först när inget prioriterat område står helt orört eller efter 14 frågor.

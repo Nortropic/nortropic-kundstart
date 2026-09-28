@@ -29,8 +29,10 @@ async function medSvar(ai = 'gateway') {
   return (await A.registreraSvar(a.id, { fraga_id: 'AG1', text: SVAR1, typ: 'text', idempotens: 'SVARAG1X' })).a;
 }
 function agentUt(over = {}) {
-  return { aterkoppling: 'Ni vill att kunderna bokar själva.', fraga: { text: 'Vilka tjänster ska kunna bokas?', nyckel: 'bokning_tjanster', omrade: 'C', varfor: 'bokningens upplägg', form: 'oppen', alternativ: [], tillval: [] }, uppgifter: [], behov: [], tillval_val: [], tillval_rekommendation: [], tackning: [], research: [], klar: false, ...over };
+  return { aterkoppling: 'Ni vill att kunderna bokar själva.', fraga: { text: 'Vilka tjänster ska kunna bokas?', nyckel: 'bokning_tjanster', omrade: 'C', varfor: 'bokningens upplägg', form: 'oppen', alternativ: [], tillval: [] }, uppgifter: [], behov: [], tillval: [], tackning: [], research: [], klar: false, ...over };
 }
+const kundensBesked = (tillval, kundval, citat, kalla_id = 'AG1', system = '') => ({ tillval, grund: 'kundens_besked', kundval, system, citat, kalla_id, motivering: '' });
+const rekommendation = (tillval, motivering) => ({ tillval, grund: 'rekommendation', kundval: 'ingen', system: '', citat: '', kalla_id: '', motivering });
 function gateway(ut, opts = {}) {
   const anrop = [];
   global.fetch = async (url, init) => {
@@ -53,7 +55,7 @@ test('Öppningsfrågan är fast och ställs utan modellanrop', async () => {
 
 test('Agentens schema är strikt; varje notering kräver ordagrant citat ur kundens svar eller material', async () => {
   assert.equal(AG.AGENT_SCHEMA.additionalProperties, false);
-  assert.deepEqual([...AG.AGENT_SCHEMA.required].sort(), ['aterkoppling', 'behov', 'fraga', 'klar', 'research', 'tackning', 'tillval_rekommendation', 'tillval_val', 'uppgifter'].sort());
+  assert.deepEqual([...AG.AGENT_SCHEMA.required].sort(), ['aterkoppling', 'behov', 'fraga', 'klar', 'research', 'tackning', 'tillval', 'uppgifter'].sort());
   const a = await medSvar();
   const k = AG.byggKontext(a, { kanda: [], tackning: [], utlosta: [], aterstarAnrop: 10 });
   const ut = AG.validera(agentUt({
@@ -62,12 +64,12 @@ test('Agentens schema är strikt; varje notering kräver ordagrant citat ur kund
       { nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '' },
       { nyckel: 'hittepa', rubrik: 'Påhitt', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi har tre butiker.', kalla_id: 'AG1', sammanfattning: '' },
     ],
-    tillval_val: [
-      { tillval: 'bokning', kundval: 'onskat', system: '', citat: 'Vi vill att kunderna ska kunna boka service själva.', kalla_id: 'AG1' },
-      { tillval: 'rymdfarkost', kundval: 'onskat', system: '', citat: 'Vi vill att kunderna ska kunna boka service själva.', kalla_id: 'AG1' },
-      { tillval: 'crm', kundval: 'har_system', system: '', citat: 'hos Loopia', kalla_id: 'AG1' },
+    tillval: [
+      kundensBesked('bokning', 'onskat', 'Vi vill att kunderna ska kunna boka service själva.'),
+      kundensBesked('rymdfarkost', 'onskat', 'Vi vill att kunderna ska kunna boka service själva.'),
+      kundensBesked('crm', 'har_system', 'hos Loopia'),
+      rekommendation('foretagsprofil', 'Lokala kunder söker på kartan.'),
     ],
-    tillval_rekommendation: [{ tillval: 'foretagsprofil', motivering: 'Lokala kunder söker på kartan.' }],
     tackning: [{ nyckel: 'data', lage: 'kunden_vet_inte', citat: 'Vi vet inte vad vi har för statistik.', kalla_id: 'AG1' }],
     research: [{ fraga: 'Vad erbjuder konkurrenterna?', varfor: 'x', nyckel: '', citat: 'påhittat', kalla_id: 'kand' }],
   }), k);
@@ -86,8 +88,7 @@ test('En agenttur tillämpar kundens tillval, rekommendation, vet inte och resea
   const a = await medSvar();
   const anrop = gateway(agentUt({
     uppgifter: [{ nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '' }],
-    tillval_val: [{ tillval: 'bokning', kundval: 'onskat', system: '', citat: 'Vi vill att kunderna ska kunna boka service själva.', kalla_id: 'AG1' }],
-    tillval_rekommendation: [{ tillval: 'foretagsprofil', motivering: 'Lokala kunder söker på kartan.' }],
+    tillval: [kundensBesked('bokning', 'onskat', 'Vi vill att kunderna ska kunna boka service själva.'), rekommendation('foretagsprofil', 'Lokala kunder söker på kartan.')],
     tackning: [{ nyckel: 'data', lage: 'kunden_vet_inte', citat: 'Vi vet inte vad vi har för statistik.', kalla_id: 'AG1' }],
     research: [{ fraga: 'Hur tar verkstäder i Umeå emot bokningar?', varfor: 'nivå', nyckel: '', citat: 'cykelverkstad i Umeå', kalla_id: 'AG1' }],
   }));
@@ -110,10 +111,41 @@ test('En agenttur tillämpar kundens tillval, rekommendation, vet inte och resea
   assert.equal(ex.ai.pagaende, undefined, 'låset exporteras inte');
 });
 
+test('Kundens citat avgör tillvalet; domänresearch, frågor till kunden och "vi vet inte" som uppgift avvisas eller blir okänt', async () => {
+  const a = await medSvar();
+  const k = AG.byggKontext(a, { kanda: [], tackning: [], utlosta: [], aterstarAnrop: 10 });
+  const ut = AG.validera(agentUt({
+    uppgifter: [
+      { nyckel: 'data', rubrik: 'Statistik', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi vet inte vad vi har för statistik.', kalla_id: 'AG1', sammanfattning: '' },
+      { nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '' },
+    ],
+    tillval: [
+      // Modellen kallar det rekommendation men citerar kundens eget önskemål: kundens ord vinner.
+      { tillval: 'bokning', grund: 'rekommendation', kundval: 'onskat', system: '', citat: 'Vi vill att kunderna ska kunna boka service själva.', kalla_id: 'AG1', motivering: 'Ni vill att kunderna bokar själva.' },
+      // Påstått kundbesked utan kundens ord blir bara en rekommendation.
+      { tillval: 'betalning', grund: 'kundens_besked', kundval: 'onskat', system: '', citat: 'Vi vill ta betalt i förskott.', kalla_id: 'AG1', motivering: 'Deposition minskar uteblivna besök.' },
+      kundensBesked('doman', 'har_system', 'Vi har domänen testcykel.se hos Loopia.', 'AG1', 'testcykel.se'),
+      rekommendation('doman', 'Ni bör ha en egen adress.'),
+    ],
+    research: [
+      { fraga: 'Vilka öppna DNS-uppgifter finns för testcykel.se?', varfor: 'x', nyckel: '', citat: 'testcykel.se', kalla_id: 'AG1' },
+      { fraga: 'Vilket bokningssystem använder ni i dag?', varfor: 'x', nyckel: '', citat: 'boka service själva', kalla_id: 'AG1' },
+      { fraga: 'Hur tar cykelverkstäder i Umeå emot bokningar på nätet?', varfor: 'nivå', nyckel: '', citat: 'cykelverkstad i Umeå', kalla_id: 'AG1' },
+    ],
+  }), k);
+  assert(ut);
+  assert.deepEqual(ut.tillval_val.map((t) => t.tillval + ':' + t.kundval + ':' + t.system), ['bokning:onskat:', 'doman:har_system:testcykel.se']);
+  assert.deepEqual(ut.tillval_rekommendation.map((t) => t.tillval), ['betalning']);
+  assert.deepEqual(ut.uppgifter.map((u) => u.nyckel), ['erbjudande']);
+  assert.deepEqual(ut.tackning.map((t) => t.nyckel + ':' + t.lage), ['data:kunden_vet_inte']);
+  assert.deepEqual(ut.research.map((r) => r.fraga), ['Hur tar cykelverkstäder i Umeå emot bokningar på nätet?']);
+  assert.deepEqual(ut.avvisade.map((x) => x.orsak).sort(), ['citat_saknas_i_kundens_svar', 'domanen_kontrolleras_av_servern', 'fraga_till_kunden_inte_research'].sort());
+});
+
 test('Ett äldre uttalande i samtalet ändrar aldrig ett nyare val i kontrollerna', async () => {
   let a = await medSvar();
   a = (await A.sattTillval(a.id, { tillval: 'bokning', kundval: 'inte_nu', idempotens: 'KONTROLL01' })).a;
-  gateway(agentUt({ tillval_val: [{ tillval: 'bokning', kundval: 'onskat', system: '', citat: 'Vi vill att kunderna ska kunna boka service själva.', kalla_id: 'AG1' }] }));
+  gateway(agentUt({ tillval: [kundensBesked('bokning', 'onskat', 'Vi vill att kunderna ska kunna boka service själva.')] }));
   await A.nasta(a.id);
   const b = await A.lasArende(a.id);
   assert.equal(b.tillval.find((t) => t.id === 'bokning').kundval, 'inte_nu');
@@ -301,7 +333,7 @@ test('Ärende lagrat av den driftsatta versionen (133f37f) går att visa, export
       { nyckel: 'erbjudande', rubrik: 'Verksamhet', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'A1', sammanfattning: '' },
       { nyckel: 'plats', rubrik: 'Plats', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Umeå', kalla_id: 'A1', sammanfattning: '' },
     ],
-    tillval_val: [{ tillval: 'bokning', kundval: 'onskat', system: '', citat: 'Vi vill att kunderna ska kunna boka service själva', kalla_id: 'A1' }],
+    tillval: [kundensBesked('bokning', 'onskat', 'Vi vill att kunderna ska kunna boka service själva', 'A1')],
   }));
   const r = await A.nasta(id);
   assert.equal(anrop.length, 1, 'agenten körs för det gamla ärendet');
