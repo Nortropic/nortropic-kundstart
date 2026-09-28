@@ -141,8 +141,8 @@ textarea.svar-falt:focus, textarea.ratt-falt:focus, input.falt:focus { outline: 
 .tillval-i-fraga { display: grid; gap: 0.75rem; margin: 0 0 1rem; }
 
 .rad { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 0.75rem 0 0; }
-.rad.tight { flex-wrap: nowrap; margin-top: 0.375rem; }
-.rad.tight .falt { flex: 1 1 auto; min-width: 0; }
+.rad.tight { flex-wrap: wrap; margin-top: 0.375rem; }
+.rad.tight .falt { flex: 1 1 10rem; min-width: 0; }
 .rad.fler { margin-top: 0.5rem; }
 .knapp { appearance: none; border: 1px solid var(--hav); background: var(--hav); color: #fff; border-radius: var(--radie); padding: 0.625rem 1rem; cursor: pointer; min-height: 44px; transition: transform 100ms var(--ease), background-color 120ms, border-color 120ms; max-width: 100%; text-wrap: balance; }
 .knapp:active { transform: scale(0.98); }

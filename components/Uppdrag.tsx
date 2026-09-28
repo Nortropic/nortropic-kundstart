@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { AnropsFel, anropa, klockslag, lasUtkast, nyNyckel, sparaUtkast } from '@/lib/klient';
+import { AnropsFel, anropa, klockslag, lasUtkast, medInnehall, nyNyckel, sparaUtkast } from '@/lib/klient';
 import type { BildRad } from '@/lib/arende';
 import type { Vy } from '@/lib/vy';
 import Material from './Material';
@@ -143,7 +143,7 @@ function Rad({ rad, setVy }: { rad: BildRad; setVy: (v: Vy) => void }) {
     setLage('sparar');
     setFel('');
     try {
-      const r = await anropa<{ ok: true; ny: boolean; vy: Vy }>('/api/rattelse', { method: 'POST', body: JSON.stringify({ nyckel: rad.nyckel, varde: text, idempotens }) });
+      const r = await anropa<{ ok: true; ny: boolean; vy: Vy }>('/api/rattelse', { method: 'POST', body: JSON.stringify({ nyckel: rad.nyckel, varde: text, idempotens: medInnehall(idempotens, text) }) });
       setVy(r.vy);
       if (!r.ny) {
         setLage('ingen'); // servern sparade ingen ändring (samma värde som förut): fältet står kvar

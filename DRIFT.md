@@ -37,8 +37,9 @@ Uppdaterad 2026-09-28 för intervjuagenten, tillvalen, domänflödet och kostnad
   listpris) mot ärendets, dygnets och månadens tak i en villkorad skrivning av `budget/ai-<månad>.json`; efter anropet
   avräknas gatewayns faktiska `usage.cost`. Okänd kostnad (timeout) avräknas som hela reservationen. Når ett tak körs
   den regelstyrda vägen och sidfoten säger t.ex. "AI-stöd: pausat (dagens budget för AI-stödet är nådd)". Inga krediter
-  köps och inget tak höjs automatiskt. Efter tre fel i rad pausas AI-stödet i tio minuter. En agenttur får 52 s (funktionens gräns är 60 s):
-  ett gatewayanrop högst 40 s, ett andra försök bara när minst 25 s återstår. En modellrespons som kommer efter en nyare kundändring bokförs men kasseras.
+  köps och inget tak höjs automatiskt. Efter tre fel i rad pausas AI-stödet i tio minuter. En agenttur får 45 s (funktionens gräns är 60 s, resten
+  räcker för slutskrivningen och domänkontrollen): ett gatewayanrop högst 40 s, ett andra försök bara när minst 25 s
+  återstår. Ett fel efter att turen tagit ärendets lås släpper låset direkt och kunden ser "Försök igen". En modellrespons som kommer efter en nyare kundändring bokförs men kasseras.
   Agentens noteringar godtas bara med ordagrant citat ur namngivet kundsvar eller material; researchbeställningar är
   högst sex per ärende och startar ingen hämtning i Kundstart. Fri text från kunden startar aldrig verktygsloopar
   eller webbhämtning. Sidfoten visar faktiskt läge (på, av, reserv, paus, kostnadsgräns).

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { aktuellFraga, oppna, skapaArende, vantaPaSparat } from './hjalp';
+import { aktuellFraga, oppna, skapaArende, vantaPaSparat, visaUppdrag } from './hjalp';
 
 test('tangentbord, fokus, zoom och statusåterkoppling', async ({ page, request, baseURL }) => {
   const a = await skapaArende(request, baseURL!, 'Testfirma Tillgänglighet');
@@ -26,4 +26,15 @@ test('tangentbord, fokus, zoom och statusåterkoppling', async ({ page, request,
   await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
   const bredd = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
   expect(bredd).toBe(true);
+  // Samma reflow i Ditt uppdrag med domänfältet öppet (längsta knapptexten i en rad med fält).
+  await page.evaluate(() => { document.documentElement.style.zoom = '1'; });
+  const uppdrag = await visaUppdrag(page);
+  await uppdrag.locator('summary', { hasText: 'Alla möjligheter' }).click();
+  const doman = uppdrag.locator('.tillval-kort', { has: page.locator('.tv-namn', { hasText: 'Egen domän' }) });
+  await doman.getByRole('button', { name: 'Vi har redan en domän' }).click();
+  await expect(doman.getByRole('button', { name: 'Kontrollera och spara' })).toBeVisible();
+  await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
+  const ingenSidrullning = await page.evaluate(() => [document.documentElement, document.querySelector('.ark-inre'), document.querySelector('aside.uppdrag-yta')]
+    .filter((el): el is HTMLElement => Boolean(el)).every((el) => el.scrollWidth <= el.clientWidth + 1));
+  expect(ingenSidrullning, 'ingen horisontell rullning med domänfältet öppet vid 200 %').toBe(true);
 });

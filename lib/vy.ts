@@ -148,7 +148,7 @@ export function tillVy(a: Arende): Vy {
     bild: bildRader,
     uppdrag: {
       mal: bildRader.filter((r) => r.avsnitt === 'mal'),
-      forstatt: [...forstattGrupper.entries()].sort(([x], [y]) => x.localeCompare(y)).map(([omrade, rader]) => ({ omrade, namn: OMRADEN[omrade] || OMRADEN[''], rader })),
+      forstatt: [...forstattGrupper.entries()].sort(([x], [y]) => (x || '~').localeCompare(y || '~')).map(([omrade, rader]) => ({ omrade, namn: OMRADEN[omrade] || OMRADEN[''], rader })),
       valda: tillvalLista.filter((x) => x.kundval && x.kundval !== 'inte_nu'),
       rekommenderade: tillvalLista.filter((x) => x.rekommendation && !x.kundval),
       // Ett behov som kunden själv tagit upp är inte orört: det är nämnt och detaljerna återstår.

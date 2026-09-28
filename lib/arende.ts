@@ -29,8 +29,8 @@ const MIN_MS_MELLAN_SVAR = 2000; // tidsstämplar har sekundupplösning; idempot
 const PAUS_EFTER_FEL = 3;
 const PAUS_MIN = 10;
 const AGENT_MAX_TOKENS = 6000;
-/** En agenttur (alla försök) ryms i /api/nasta:s maxDuration 60 s med marginal för lagring. */
-const TUR_MS = 52_000;
+/** En agenttur (alla försök) ryms i /api/nasta:s maxDuration 60 s med marginal för slutskrivningen och domänkontrollen. */
+const TUR_MS = 45_000;
 const AGENT_MAX_TOKENS_OMTAG = 10000;
 const LAS_MS = 80_000;
 const MAX_RESEARCH = 6;
@@ -518,6 +518,8 @@ export async function sattDoman(id: string, p: { doman: string; kundval: 'har_sy
   if (!fore) throw new Vagrad('ärendet finns inte', 404);
   const t0 = (fore.tillval || []).find((t) => t.id === 'doman');
   if (t0?.kontroll && t0.historik.some((h) => h.idempotens === p.idempotens)) return { a: fore, ny: false, kontroll: t0.kontroll };
+  // Samma domän och samma val igen (dubbelklick, ny flik med ny nyckel): ingen ny kontroll och ingen ny historikrad.
+  if (t0?.kontroll && t0.kundval === p.kundval && t0.system === doman && t0.kalla === 'kontroll') return { a: fore, ny: false, kontroll: t0.kontroll };
   const senaste = fore.handelser.filter((h) => h.typ === 'doman_kontroll' && Date.now() - Date.parse(h.tid) < 3600_000).length;
   if (senaste >= MAX_DOMANKONTROLLER_PER_TIMME) throw new Vagrad('för många domänkontroller den senaste timmen; försök igen om en stund', 429);
   const kontroll = await kontrolleraDoman(doman);
@@ -526,6 +528,7 @@ export async function sattDoman(id: string, p: { doman: string; kundval: 'har_sy
     ny = false;
     const t = tillvalRad(a, 'doman');
     if (t.historik.some((h) => h.idempotens === p.idempotens)) return null;
+    if (t.kontroll && t.kundval === p.kundval && t.system === doman && t.kalla === 'kontroll') return null;
     bump(a);
     t.kundval = p.kundval;
     t.system = doman;
@@ -641,6 +644,10 @@ function tillampaAgent(a: Arende, ut: AgentUtdata, bas: number, modell?: string)
   for (const m of ut.tackning) {
     const senareSvar = a.svar.some((s) => s.nyckel === m.nyckel && s.revision > m.kalla_revision && s.typ !== 'vet_inte');
     if (senareSvar || rattadEfter(m.nyckel, m.kalla_revision)) continue;
+    // En markering (vet inte, gäller inte, avstår) ur ett annat svar får aldrig ersätta det kunden själv sagt om nyckeln.
+    const kundensEgna = a.svar.some((s) => s.nyckel === m.nyckel && s.typ !== 'vet_inte') || a.rattelser.some((r) => r.nyckel === m.nyckel)
+      || (a.uppgifter || []).some((u) => u.giltig && u.status === 'kunden uppger' && (u.nyckel === m.nyckel || u.tacker === m.nyckel));
+    if (kundensEgna) continue;
     const lista = (a.tackning_agent ??= []);
     if (lista.some((x) => x.giltig && x.nyckel === m.nyckel && x.lage === m.lage)) continue;
     for (const x of lista) if (x.giltig && x.nyckel === m.nyckel) x.giltig = false;
@@ -693,7 +700,7 @@ async function korAgent(a: Arende, lage: AiLage, modell: string, system: string,
   const ut: Anropsutfall = { svar: null, forsok: 0, tokens_in: 0, tokens_out: 0, kand_usd: 0, okand_usd: 0, ms: 0, diagnostik: [] };
   let maxTokens = AGENT_MAX_TOKENS;
   for (let n = 0; n < 2; n++) {
-    // Turen har 52 s inom funktionens 60 s. Andra försöket bara när minst 25 s återstår och felet går att försöka om.
+    // Turen har 45 s inom funktionens 60 s. Andra försöket bara när minst 25 s återstår och felet går att försöka om.
     if (n > 0 && (lage === 'claude-cli' || Date.now() - start > TUR_MS - 25_000)) break;
     const tecken = system.length + anvandare.length;
     let res: { ok: true; id: string; usd: number } | null = null;
@@ -777,86 +784,98 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
     return a;
   });
   if (upptaget) return vila(las.data, { vantar: !las.data.fragor.some((f) => f.status === 'stalld') && !las.data.samtal_klar });
-  forsta = las.data;
-  const basRevision = forsta.revision;
-  const modell = lage === 'claude-cli' ? (process.env.KUNDSTART_CLI_MODELL || 'claude-opus-5') : forsta.ai.modell && lage === 'gateway' ? forsta.ai.modell : standardModell();
+  try {
+    forsta = las.data;
+    const basRevision = forsta.revision;
+    const modell = lage === 'claude-cli' ? (process.env.KUNDSTART_CLI_MODELL || 'claude-opus-5') : forsta.ai.modell && lage === 'gateway' ? forsta.ai.modell : standardModell();
 
-  let utfall: Anropsutfall | null = null;
-  let ut: AgentUtdata | null = null;
-  let avvisade: Avvisad[] = [];
-  let valideringsfel: string | undefined;
-  if (lage !== 'regelstyrd') {
-    const kontext = byggKontext(forsta, {
-      kanda: bild(forsta).map((b) => ({ nyckel: b.nyckel, varde: b.varde, status: b.status, kalla: b.typ === 'kund' ? 'kunden' : b.typ === 'ai' ? 'vår tolkning' : b.kalla })),
-      tackning: tackning(forsta).map((t) => ({ nyckel: t.nyckel, status: t.status, fraga: t.fraga, prio: t.prio })),
-      utlosta: forsta.foljdregler_utlosta.map((u) => `${u.regel} (${u.fraga_id}: "${u.traff}")`),
-      aterstarAnrop: Math.max(0, Math.floor((granser().arende_usd - (forsta.ai.kostnad_usd || 0) - (forsta.ai.okand_kostnad_usd || 0)) / 0.01)),
-    });
-    utfall = await korAgent(forsta, lage, modell, systemText(), kontext.text);
-    if (utfall.svar) {
-      ut = validera(utfall.svar.rå, kontext);
-      if (!ut) valideringsfel = 'modellens svar saknade användbar fråga eller giltigt avslut';
-      avvisade = ut?.avvisade || [];
-    }
-  }
-  const fallback = lage !== 'regelstyrd' && !ut;
-  const felklass = utfall?.budgetStopp ? 'budget' : utfall?.fel?.klass || (valideringsfel ? 'sakligt_otillrackligt' : undefined);
-
-  let forkastad = false;
-  let tillampat: ReturnType<typeof tillampaAgent> | null = null;
-  const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
-    forkastad = false;
-    tillampat = null;
-    if (a.ai.pagaende?.id === lasId) a.ai.pagaende = null;
-    if (utfall) {
-      a.ai.anrop += utfall.forsok;
-      a.ai.tokens_in += utfall.tokens_in;
-      a.ai.tokens_out += utfall.tokens_out;
-      a.ai.kostnad_usd = Math.round(((a.ai.kostnad_usd || 0) + utfall.kand_usd) * 1e8) / 1e8;
-      a.ai.okand_kostnad_usd = Math.round(((a.ai.okand_kostnad_usd || 0) + utfall.okand_usd) * 1e8) / 1e8;
-      a.ai.senaste_ms = utfall.ms;
-      a.ai.diagnostik = utfall.diagnostik;
-      if (utfall.svar && ut) { a.ai.modell = modell; a.ai.senaste_lyckade = nu(); a.ai.fel_i_rad = 0; }
-      else if (utfall.fel || valideringsfel) {
-        a.ai.fel += 1;
-        a.ai.fel_i_rad = (a.ai.fel_i_rad || 0) + 1;
-        a.ai.senaste_fel = felklass;
-        a.ai.senaste_fel_tid = nu();
-        if (a.ai.fel_i_rad >= PAUS_EFTER_FEL) { a.ai.paus_till = new Date(Date.now() + PAUS_MIN * 60_000).toISOString(); a.ai.fel_i_rad = 0; }
+    let utfall: Anropsutfall | null = null;
+    let ut: AgentUtdata | null = null;
+    let avvisade: Avvisad[] = [];
+    let valideringsfel: string | undefined;
+    if (lage !== 'regelstyrd') {
+      const kontext = byggKontext(forsta, {
+        kanda: bild(forsta).map((b) => ({ nyckel: b.nyckel, varde: b.varde, status: b.status, kalla: b.typ === 'kund' ? 'kunden' : b.typ === 'ai' ? 'vår tolkning' : b.kalla })),
+        tackning: tackning(forsta).map((t) => ({ nyckel: t.nyckel, status: t.status, fraga: t.fraga, prio: t.prio })),
+        utlosta: forsta.foljdregler_utlosta.map((u) => `${u.regel} (${u.fraga_id}: "${u.traff}")`),
+        aterstarAnrop: Math.max(0, Math.floor((granser().arende_usd - (forsta.ai.kostnad_usd || 0) - (forsta.ai.okand_kostnad_usd || 0)) / 0.01)),
+      });
+      utfall = await korAgent(forsta, lage, modell, systemText(), kontext.text);
+      if (utfall.svar) {
+        ut = validera(utfall.svar.rå, kontext);
+        if (!ut) valideringsfel = 'modellens svar saknade användbar fråga eller giltigt avslut';
+        avvisade = ut?.avvisade || [];
       }
     }
-    a.ai.felklass = felklass;
-    a.ai.budget_skal = utfall?.budgetStopp;
-    a.ai.aktuell = lage === 'regelstyrd' ? (skal ? 'pausad' : 'av') : utfall?.budgetStopp ? 'pausad' : fallback ? 'reserv' : 'aktiv';
-    const annanHannFore = a.fragor.some((f) => f.status === 'stalld');
-    const inaktuell = a.revision !== basRevision;
-    if (annanHannFore || inaktuell) {
-      forkastad = true;
-      handelse(a, 'nasta_forkastad', { skal: inaktuell ? 'kundrevisionen ändrades under modellväntan; inget gammalt modellinnehåll används' : 'en annan flik hann ställa nästa fråga; anropet bokfört', ms: utfall?.ms, kostnad_usd: utfall?.kand_usd });
+    const fallback = lage !== 'regelstyrd' && !ut;
+    const felklass = utfall?.budgetStopp ? 'budget' : utfall?.fel?.klass || (valideringsfel ? 'sakligt_otillrackligt' : undefined);
+
+    let forkastad = false;
+    let tillampat: ReturnType<typeof tillampaAgent> | null = null;
+    const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+      forkastad = false;
+      tillampat = null;
+      if (a.ai.pagaende?.id === lasId) a.ai.pagaende = null;
+      if (utfall) {
+        a.ai.anrop += utfall.forsok;
+        a.ai.tokens_in += utfall.tokens_in;
+        a.ai.tokens_out += utfall.tokens_out;
+        a.ai.kostnad_usd = Math.round(((a.ai.kostnad_usd || 0) + utfall.kand_usd) * 1e8) / 1e8;
+        a.ai.okand_kostnad_usd = Math.round(((a.ai.okand_kostnad_usd || 0) + utfall.okand_usd) * 1e8) / 1e8;
+        a.ai.senaste_ms = utfall.ms;
+        a.ai.diagnostik = utfall.diagnostik;
+        if (utfall.svar && ut) { a.ai.modell = modell; a.ai.senaste_lyckade = nu(); a.ai.fel_i_rad = 0; }
+        else if (utfall.fel || valideringsfel) {
+          a.ai.fel += 1;
+          a.ai.fel_i_rad = (a.ai.fel_i_rad || 0) + 1;
+          a.ai.senaste_fel = felklass;
+          a.ai.senaste_fel_tid = nu();
+          if (a.ai.fel_i_rad >= PAUS_EFTER_FEL) { a.ai.paus_till = new Date(Date.now() + PAUS_MIN * 60_000).toISOString(); a.ai.fel_i_rad = 0; }
+        }
+      }
+      a.ai.felklass = felklass;
+      a.ai.budget_skal = utfall?.budgetStopp;
+      a.ai.aktuell = lage === 'regelstyrd' ? (skal ? 'pausad' : 'av') : utfall?.budgetStopp ? 'pausad' : fallback ? 'reserv' : 'aktiv';
+      const annanHannFore = a.fragor.some((f) => f.status === 'stalld');
+      const inaktuell = a.revision !== basRevision;
+      if (annanHannFore || inaktuell) {
+        forkastad = true;
+        handelse(a, 'nasta_forkastad', { skal: inaktuell ? 'kundrevisionen ändrades under modellväntan; inget gammalt modellinnehåll används' : 'en annan flik hann ställa nästa fråga; anropet bokfört', ms: utfall?.ms, kostnad_usd: utfall?.kand_usd });
+        return a;
+      }
+      bump(a);
+      let fragaId: string | null = null;
+      if (ut) {
+        tillampat = tillampaAgent(a, ut, basRevision, modell);
+        fragaId = tillampat.fraga;
+        if (!fragaId && !tillampat.klar) fragaId = tillampaRegelstyrd(a, ut.aterkoppling || undefined);
+      } else {
+        fragaId = tillampaRegelstyrd(a);
+      }
+      handelse(a, 'nasta', { lage: ut ? lage : 'regelstyrd', fallback, skal: skal || utfall?.budgetStopp, felklass, fraga: fragaId, klar: Boolean(a.samtal_klar), ms: utfall?.ms, forsok: utfall?.forsok, tokens_in: utfall?.tokens_in, tokens_out: utfall?.tokens_out, kostnad_usd: utfall?.kand_usd, okand_usd: utfall?.okand_usd, tillampat, avvisade: avvisade.length ? avvisade : undefined, valideringsfel });
       return a;
-    }
-    bump(a);
-    let fragaId: string | null = null;
-    if (ut) {
-      tillampat = tillampaAgent(a, ut, basRevision, modell);
-      fragaId = tillampat.fraga;
-      if (!fragaId && !tillampat.klar) fragaId = tillampaRegelstyrd(a, ut.aterkoppling || undefined);
-    } else {
-      fragaId = tillampaRegelstyrd(a);
-    }
-    handelse(a, 'nasta', { lage: ut ? lage : 'regelstyrd', fallback, skal: skal || utfall?.budgetStopp, felklass, fraga: fragaId, klar: Boolean(a.samtal_klar), ms: utfall?.ms, forsok: utfall?.forsok, tokens_in: utfall?.tokens_in, tokens_out: utfall?.tokens_out, kostnad_usd: utfall?.kand_usd, okand_usd: utfall?.okand_usd, tillampat, avvisade: avvisade.length ? avvisade : undefined, valideringsfel });
-    return a;
-  });
-  const a = await efterkontrolleraDoman(r.data).catch(() => r.data);
-  const fragor = a.fragor.filter((f) => f.status === 'stalld');
-  return {
-    a,
-    fragor,
-    klar: fragor.length === 0 && Boolean(a.samtal_klar),
-    forkastad,
-    meddelande: ut?.aterkoppling || '',
-    ai: { lage: ut ? lage : 'regelstyrd', anvand: Boolean(ut), fallback, fel: skal || utfall?.budgetStopp || felklass, modell: ut ? modell : undefined, ms: utfall?.ms, kostnad_usd: utfall ? utfall.kand_usd : null },
-  };
+    });
+    const a = await efterkontrolleraDoman(r.data).catch(() => r.data);
+    const fragor = a.fragor.filter((f) => f.status === 'stalld');
+    return {
+      a,
+      fragor,
+      klar: fragor.length === 0 && Boolean(a.samtal_klar),
+      forkastad,
+      meddelande: ut?.aterkoppling || '',
+      ai: { lage: ut ? lage : 'regelstyrd', anvand: Boolean(ut), fallback, fel: skal || utfall?.budgetStopp || felklass, modell: ut ? modell : undefined, ms: utfall?.ms, kostnad_usd: utfall ? utfall.kand_usd : null },
+    };
+  } catch (e) {
+    // Ett fel efter låset får inte lämna ärendet låst i 80 s: släpp låset om det fortfarande är vårt och låt felet nå
+    // kunden, som då ser "Försök igen" (det kunden svarat är redan sparat).
+    await uppdateraDok<Arende>(arendeStig(id), (a) => {
+      if (a.ai.pagaende?.id !== lasId) return null;
+      a.ai.pagaende = null;
+      handelse(a, 'nasta_fel', { fel: e instanceof Error ? e.name : 'okant' });
+      return a;
+    }).catch(() => undefined);
+    throw e;
+  }
 }
 
 // ---------- material ----------

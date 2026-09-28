@@ -272,6 +272,8 @@ export function rensa(s: string, max: number): string {
 
 function nyckelOk(s: string): string | null {
   const k = s.trim().toLowerCase().replace(/[åä]/g, 'a').replace(/ö/g, 'o').replace(/[^a-z_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+  // tillval_* och doman_kontroll är Digitalas egna faktanycklar för tillvalen och domänkontrollen; en uppgift får inte låna dem.
+  if (/^tillval_/.test(k) || k === 'doman_kontroll') return null;
   return /^[a-z][a-z_]{1,59}$/.test(k) ? k : null;
 }
 

@@ -1,6 +1,20 @@
 'use client';
 // Klientens anrop: idempotensnyckel per handling, utkast i sessionStorage (försvinner när fliken stängs), tydliga fel.
 
+/**
+ * Idempotensnyckel för just detta innehåll: samma text igen (återförsök, dubbelklick) ger samma nyckel, ändrad text en ny.
+ * Annars kunde ett svar vars kvitto tappats och som kunden sedan ändrat återanvända nyckeln och visas som "Sparat"
+ * fast den ändrade texten aldrig sparades.
+ */
+export function medInnehall(bas: string, innehall: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < innehall.length; i++) {
+    h ^= innehall.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return bas.slice(0, 24) + '-' + h.toString(36);
+}
+
 export function nyNyckel(): string {
   const b = new Uint8Array(12);
   crypto.getRandomValues(b);

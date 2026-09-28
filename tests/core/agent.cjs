@@ -353,6 +353,50 @@ test('Samtidig skrivning som Vercel Blob avvisar med 409 (conflicting operation)
   } finally { blob.put = put; }
 });
 
+test('Granskningsnoter: låset släpps vid fel, markering skriver inte över kundens svar, domän igen ger ingen ny kontroll, reserverade nycklar vägras', async () => {
+  // Låset: ett fel efter låset (här vägrar lagret budgetreskontran) lämnar inte ärendet låst i 80 s.
+  let a = await medSvar();
+  const put = blob.put;
+  blob.put = async (p, body, o) => { if (p.startsWith('budget/')) throw new Error('Vercel Blob: lagret svarar inte'); return put(p, body, o); };
+  gateway(agentUt());
+  try { await assert.rejects(A.nasta(a.id)); } finally { blob.put = put; }
+  a = await A.lasArende(a.id);
+  assert.equal(a.ai.pagaende, null, 'låset är släppt');
+  assert(a.handelser.some((h) => h.typ === 'nasta_fel'));
+  const anrop = gateway(agentUt());
+  const r = await A.nasta(a.id);
+  assert.equal(anrop.length, 1, 'nästa tur körs direkt, utan att vänta ut låset'); assert.equal(r.fragor.length, 1);
+
+  // Markering: kunden har själv svarat på AG1 (verksamhetsmal); en "vet inte"-markering på samma nyckel ur ett annat citat tillämpas inte.
+  let b = await medSvar();
+  gateway(agentUt({ tackning: [{ nyckel: 'verksamhetsmal', lage: 'kunden_vet_inte', citat: 'Vi vet inte vad vi har för statistik.', kalla_id: 'AG1' }] }));
+  await A.nasta(b.id);
+  b = await A.lasArende(b.id);
+  assert.equal(T.tackning(b).find((t) => t.nyckel === 'verksamhetsmal').status, 'uppgift_finns');
+  assert(!(b.tackning_agent || []).some((m) => m.nyckel === 'verksamhetsmal'));
+
+  // Domän: samma domän och samma val igen med ny idempotensnyckel ger ingen ny kontroll och ingen ny historikrad.
+  let c = await arende();
+  let uppslag = 0;
+  global.fetch = async (url) => { uppslag++; return new URL(String(url)).host === 'data.iana.org' ? new Response(JSON.stringify({ services: [] })) : new Response(JSON.stringify({ Status: 0, Answer: [{ type: 2, data: 'ns1.loopia.se.' }] })); };
+  await A.sattDoman(c.id, { doman: 'testcykel.se', kundval: 'har_system', idempotens: 'DOMANDUB01' });
+  const efterForsta = uppslag;
+  const igen = await A.sattDoman(c.id, { doman: 'https://www.testcykel.se/', kundval: 'har_system', idempotens: 'DOMANDUB02' });
+  assert.equal(igen.ny, false); assert.equal(uppslag, efterForsta, 'ingen ny DNS/RDAP-läsning');
+  c = await A.lasArende(c.id);
+  assert.equal(c.tillval.find((t) => t.id === 'doman').historik.length, 1);
+
+  // Reserverade nycklar: agenten kan inte lägga en uppgift under Digitalas egna faktanycklar.
+  const d = await medSvar();
+  const k = AG.byggKontext(d, { kanda: [], tackning: [], utlosta: [], aterstarAnrop: 10 });
+  const ut = AG.validera(agentUt({ uppgifter: [
+    { nyckel: 'tillval_bokning', rubrik: 'x', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '', tacker: '' },
+    { nyckel: 'doman_kontroll', rubrik: 'x', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '', tacker: '' },
+  ] }), k);
+  assert.equal(ut.uppgifter.length, 0);
+  assert.deepEqual(ut.avvisade.map((x) => x.orsak), ['ogiltig_nyckel', 'ogiltig_nyckel']);
+});
+
 test('Ärende lagrat av den driftsatta versionen (133f37f) går att visa, exportera och fortsätta med agenten', async () => {
   // Fixturen är skapad med 133f37f:s lib/arende.ts (se fixturens "kalla"): bankfrågor, behovsfråga uppskjuten efter
   // "vet inte", öppen bankfråga, rättelse, inlämning och signal, men inga fält från den nya kandidaten.

@@ -1,7 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AnropsFel, anropa, klockslag, lasUtkast, nyNyckel, sparaUtkast } from '@/lib/klient';
+import { AnropsFel, anropa, klockslag, lasUtkast, medInnehall, nyNyckel, sparaUtkast } from '@/lib/klient';
 import type { Svar } from '@/lib/typer';
 import type { FragaVy, Vy } from '@/lib/vy';
 import { TillvalKort } from './Tillval';
@@ -53,7 +53,10 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
       if ((r.vantar || r.forkastad) && omforsok.current < 3) {
         omforsok.current += 1;
         window.setTimeout(() => setIgen((x) => x + 1), 1500 * omforsok.current);
-      } else omforsok.current = 0;
+      } else {
+        if ((r.vantar || r.forkastad) && r.vy.oppna.length === 0 && !r.vy.klar) setHamtFel('Nästa fråga dröjer.');
+        omforsok.current = 0;
+      }
     } catch (e) {
       setHamtFel((e as AnropsFel).message);
     } finally {
@@ -224,7 +227,7 @@ function FragaKort({ fraga, vy, setVy, rubrikRef, onSparat }: { fraga: FragaVy; 
     setLage('sparar');
     setFel('');
     try {
-      const r = await anropa<SvarSvar>('/api/svar', { method: 'POST', body: JSON.stringify({ fraga_id: fraga.id, text: innehall, typ, idempotens: id }) });
+      const r = await anropa<SvarSvar>('/api/svar', { method: 'POST', body: JSON.stringify({ fraga_id: fraga.id, text: innehall, typ, idempotens: medInnehall(id, typ + '|' + innehall) }) });
       sparaUtkast(nyckel, null);
       setLage('sparat');
       onSparat(r.vy);
@@ -305,7 +308,7 @@ function Bekraftelse({ vy, visaUppdrag, fortsatt }: { vy: Vy; visaUppdrag: (avsn
       <ul>
         <li>{i.svar} svar i samtalet</li>
         <li>{i.material} {i.material === 1 ? 'fil eller länk' : 'filer och länkar'}</li>
-        <li>{valda.length ? `${valda.length} tillval: ${valda.map((t) => t.namn).join(', ')}` : 'inga valda tillval'}</li>
+        <li>{valda.length ? `${valda.length} tillval: ${valda.map((t) => `${t.namn} (${(t.kundval_text || '').toLowerCase()})`).join(', ')}` : 'inga valda tillval'}</li>
         <li>{vy.bild.filter((b) => b.typ === 'ai').length} tolkningar från AI-stödet, som ni kan rätta</li>
       </ul>
       <h2 className="liten-rubrik">Vad som händer nu</h2>
