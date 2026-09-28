@@ -151,7 +151,8 @@ export function tillVy(a: Arende): Vy {
       forstatt: [...forstattGrupper.entries()].sort(([x], [y]) => x.localeCompare(y)).map(([omrade, rader]) => ({ omrade, namn: OMRADEN[omrade] || OMRADEN[''], rader })),
       valda: tillvalLista.filter((x) => x.kundval && x.kundval !== 'inte_nu'),
       rekommenderade: tillvalLista.filter((x) => x.rekommendation && !x.kundval),
-      aterstar: t.filter((x) => x.status === 'inte_undersokt' || x.status === 'kunden_vet_inte' || x.status === 'atkomst_saknas' || x.status === 'aterkom_senare').sort((x, y) => x.prio - y.prio).slice(0, 12).map((x) => ({ nyckel: x.nyckel, fraga: x.fraga, status: x.status, prio: x.prio })),
+      // Ett behov som kunden själv tagit upp är inte orört: det är nämnt och detaljerna återstår.
+      aterstar: t.filter((x) => x.status === 'inte_undersokt' || x.status === 'kunden_vet_inte' || x.status === 'atkomst_saknas' || x.status === 'aterkom_senare').sort((x, y) => x.prio - y.prio).slice(0, 12).map((x) => ({ nyckel: x.nyckel, fraga: x.fraga, status: x.status === 'inte_undersokt' && (a.behov || []).some((b) => b.nyckel === x.nyckel) ? 'namnt' : x.status, prio: x.prio })),
       research: (a.research || []).map((r) => ({ id: r.id, fraga: r.fraga, varfor: r.varfor })),
       senare: [
         ...a.fragor.filter((f) => f.status === 'senare').map((f) => ({ id: f.id, text: f.text })),

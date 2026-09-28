@@ -271,8 +271,13 @@ export function oppenFraga(a: Arende): Fraga | undefined {
 }
 
 /** Viktiga områden som återstår (prio 1 utan besked) och övriga luckor. Ingen procent, ingen tid. */
+/**
+ * Täckningsstödets områden som ingen har berört än. Behov som kunden själv tagit upp och Digitalas returfrågor räknas
+ * inte här: de är redan nämnda och har egna frågor i samtalet (och egen status i exporten).
+ */
 export function aterstar(a: Arende): { viktiga: number; ovriga: number } {
-  const t = tackning(a).filter((x) => x.status === 'inte_undersokt');
+  const grund = new Set(BANK.grund.map((g) => g.nyckel));
+  const t = tackning(a).filter((x) => x.status === 'inte_undersokt' && grund.has(x.nyckel));
   return { viktiga: t.filter((x) => x.prio === 1).length, ovriga: t.filter((x) => x.prio > 1).length };
 }
 
@@ -651,7 +656,7 @@ function tillampaAgent(a: Arende, ut: AgentUtdata, bas: number, modell?: string)
     research++;
   }
   // Avslut godtas när inga viktiga områden står helt outredda eller när samtalet redan är långt.
-  const viktigaKvar = tackning(a).filter((x) => x.prio === 1 && x.status === 'inte_undersokt').length;
+  const viktigaKvar = aterstar(a).viktiga;
   const klar = ut.klar && (viktigaKvar === 0 || agentFragor(a) >= AVSLUT_EFTER_FRAGOR);
   let fraga: string | null = null;
   if (klar) {

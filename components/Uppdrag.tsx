@@ -6,7 +6,7 @@ import type { Vy } from '@/lib/vy';
 import Material from './Material';
 import { AnnatBehov, TillvalKort } from './Tillval';
 
-const STATUS: Record<string, string> = { inte_undersokt: 'ingen har berört det än', kunden_vet_inte: 'ni vet inte ännu', atkomst_saknas: 'åtkomst saknas', aterkom_senare: 'ni vill återkomma' };
+const STATUS: Record<string, string> = { inte_undersokt: 'ingen har berört det än', namnt: 'ni har nämnt det; detaljerna återstår', kunden_vet_inte: 'ni vet inte ännu', atkomst_saknas: 'åtkomst saknas', aterkom_senare: 'ni vill återkomma' };
 
 /**
  * Ditt uppdrag: samma ärende som samtalet, som översikt. Varje uppgift kan rättas här; rättelsen sparas i samma ärende

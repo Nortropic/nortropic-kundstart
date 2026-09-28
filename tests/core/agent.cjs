@@ -156,6 +156,18 @@ test('En uppgift med egen nyckel täcker täckningsstödets nyckel och hamnar un
   assert.equal(A.exportPaket(b).kunduppgifter.find((u) => u.nyckel === 'service_utbud').tacker, 'erbjudande');
 });
 
+test('Räknaren för orörda viktiga områden gäller täckningsstödet, inte behov som kunden själv tagit upp', async () => {
+  const a = await medSvar();
+  const fore = A.aterstar(a).viktiga;
+  gateway(agentUt({ behov: [{ nyckel: 'bokningsregler', citat: 'Vi vill att kunderna ska kunna boka service själva.', kalla_id: 'AG1', fraga: 'Vilka regler gäller för bokningen?' }] }));
+  await A.nasta(a.id);
+  const b = await A.lasArende(a.id);
+  assert(b.behov.some((x) => x.nyckel === 'bokningsregler'));
+  assert.equal(T.tackning(b).find((x) => x.nyckel === 'bokningsregler').status, 'inte_undersokt', 'exportens täckning är oförändrad');
+  assert.equal(A.aterstar(b).viktiga, fore, 'ett nämnt behov räknas inte som orört område');
+  assert.equal(V.tillVy(b).uppdrag.aterstar.find((x) => x.nyckel === 'bokningsregler').status, 'namnt');
+});
+
 test('Ett äldre uttalande i samtalet ändrar aldrig ett nyare val i kontrollerna', async () => {
   let a = await medSvar();
   a = (await A.sattTillval(a.id, { tillval: 'bokning', kundval: 'inte_nu', idempotens: 'KONTROLL01' })).a;
