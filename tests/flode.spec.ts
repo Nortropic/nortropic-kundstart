@@ -207,5 +207,11 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     await expect(page.locator('main.samtal-yta').getByText('Inlämnat och sparat hos oss. Väntar på att hämtas av Digitala.', { exact: false })).toBeVisible();
     const lage = await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}`, { headers: internHuvud() })).json();
     expect(lage.inlamningar.length).toBe(1);
+    // Kunden vill berätta mer efter inlämningen; frågan som redan var öppen visas igen och ett nytt svar syns som ändring.
+    await page.getByRole('button', { name: 'Jag vill berätta mer' }).click();
+    await aktuellFraga(page);
+    await svara(page, 'Vi har också öppet på lördagar under våren.');
+    const oversikt = await visaUppdrag(page);
+    await expect(oversikt.locator('.uppdrag-status')).toContainText('Ni har ändrat något efter inlämningen');
   });
 });

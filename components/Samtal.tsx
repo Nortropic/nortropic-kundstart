@@ -29,6 +29,10 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
   const [andring, setAndring] = useState('');
   const [inlamnar, setInlamnar] = useState(false);
   const [igen, setIgen] = useState(0);
+  // Efter inlämning visas bekräftelsen tills kunden väljer att berätta mer; då visas samtalet igen, även om den
+  // öppna frågan ställdes före inlämningen (ärendet räknas som inlämnat tills kunden faktiskt ändrar något).
+  const [fortsatter, setFortsatter] = useState(false);
+  const bekraftelse = Boolean(vy.arende.inlamnad) && !fortsatter;
   const hamtarRef = useRef(false);
   const omforsok = useRef(0);
   const vyRef = useRef(vy);
@@ -59,8 +63,8 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
   }, [setVy]);
 
   useEffect(() => {
-    if (vy.oppna.length === 0 && !vy.klar && !vy.arende.inlamnad && !hamtarRef.current) void hamtaNasta();
-  }, [vy.oppna.length, vy.klar, vy.arende.inlamnad, hamtaNasta]);
+    if (vy.oppna.length === 0 && !vy.klar && !bekraftelse && !hamtarRef.current) void hamtaNasta();
+  }, [vy.oppna.length, vy.klar, bekraftelse, hamtaNasta]);
 
   // Begränsat omförsök när ett annat anrop pågick eller kunden hann ändra något under väntan.
   useEffect(() => {
@@ -83,6 +87,7 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
     try {
       const r = await anropa<{ ok: true; vy: Vy }>('/api/inlamning', { method: 'POST' });
       setVy(r.vy);
+      setFortsatter(false);
       window.scrollTo({ top: 0 });
     } catch (e) {
       setHamtFel((e as AnropsFel).message);
@@ -92,13 +97,13 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
   }
 
   const besvarade = vy.samtal.filter((r) => r.svar);
-  const forsta = besvarade.length === 0 && !vy.arende.inlamnad;
+  const forsta = besvarade.length === 0 && !bekraftelse;
   const kanda = vy.bild.filter((b) => b.typ === 'forifylld');
 
   return (
     <div className="samtal">
-      {vy.arende.inlamnad ? (
-        <Bekraftelse vy={vy} visaUppdrag={visaUppdrag} fortsatt={() => void hamtaNasta(true)} />
+      {bekraftelse ? (
+        <Bekraftelse vy={vy} visaUppdrag={visaUppdrag} fortsatt={() => { setFortsatter(true); void hamtaNasta(true); }} />
       ) : forsta ? (
         <div className="inledning">
           <h1>Hej, {vy.arende.kund.namn}.</h1>
@@ -119,7 +124,7 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
         </div>
       ) : null}
 
-      {!vy.arende.inlamnad && besvarade.length > 0 && (
+      {!bekraftelse && besvarade.length > 0 && (
         <ol className="logg" aria-label="Samtalet hittills">
           {besvarade.map((r) => (
             <li key={r.fraga_id} className="tur">
@@ -136,13 +141,13 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
         </ol>
       )}
 
-      {andring && !vy.arende.inlamnad && (
+      {andring && !bekraftelse && (
         <p className="andring" role="status">
           Uppdaterat i Ditt uppdrag: {andring}. <button type="button" className="knapp lank inline" onClick={() => visaUppdrag()}>Visa</button>
         </p>
       )}
 
-      {!vy.arende.inlamnad && vy.oppna.map((f, i) => (
+      {!bekraftelse && vy.oppna.map((f, i) => (
         <FragaKort key={f.id} fraga={f} vy={vy} setVy={setVy} rubrikRef={i === 0 ? fragaRef : undefined} onSparat={(v) => { setVy(v); setAndring(''); }} />
       ))}
 
@@ -153,7 +158,7 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
         </p>
       )}
 
-      {!vy.arende.inlamnad && vy.klar && !hamtar && (
+      {!bekraftelse && vy.klar && !hamtar && (
         <div className="aktuell avslut">
           <h2>Det räcker för nu</h2>
           {vy.avslut ? <p className="inledning-text">{vy.avslut}</p> : <p>Tack. Det ni berättat räcker för att vi ska kunna gå vidare.</p>}
@@ -165,7 +170,7 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
         </div>
       )}
 
-      {!vy.arende.inlamnad && !vy.klar && besvarade.length > 0 && (
+      {!bekraftelse && !vy.klar && besvarade.length > 0 && (
         <p className="aterstar">
           {vy.aterstar.viktiga > 0 ? `Viktiga områden som ingen har berört än: ${vy.aterstar.viktiga}.` : 'De viktigaste områdena är berörda.'}{' '}
           Ni kan <button type="button" className="knapp lank inline" onClick={() => void lamnaIn()} disabled={inlamnar}>lämna in det ni har hittills</button> när som helst.
