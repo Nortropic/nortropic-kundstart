@@ -397,6 +397,37 @@ test('Granskningsnoter: låset släpps vid fel, markering skriver inte över kun
   assert.deepEqual(ut.avvisade.map((x) => x.orsak), ['ogiltig_nyckel', 'ogiltig_nyckel']);
 });
 
+test('Omgång 2-noter: en misslyckad domänkontroll görs om, "Övrigt" står sist, reserverad nyckel redovisas som ogiltig', async () => {
+  let c = await arende();
+  global.fetch = async () => { throw new Error('nät nere'); };
+  await A.sattDoman(c.id, { doman: 'testcykel.se', kundval: 'har_system', idempotens: 'DOMANFEL01' });
+  c = await A.lasArende(c.id);
+  assert(c.tillval.find((t) => t.id === 'doman').kontroll.fel, 'första kontrollen misslyckades');
+  let uppslag = 0;
+  global.fetch = async (url) => { uppslag++; return new URL(String(url)).host === 'data.iana.org' ? new Response(JSON.stringify({ services: [] })) : new Response(JSON.stringify({ Status: 0, Answer: [{ type: 2, data: 'ns1.loopia.se.' }] })); };
+  const igen = await A.sattDoman(c.id, { doman: 'testcykel.se', kundval: 'har_system', idempotens: 'DOMANFEL02' });
+  assert(uppslag > 0, 'samma domän efter en misslyckad kontroll läses om'); assert.equal(igen.ny, true);
+  c = await A.lasArende(c.id);
+  assert.equal(c.tillval.find((t) => t.id === 'doman').kontroll.fel, undefined);
+
+  const b = await medSvar();
+  gateway(agentUt({ uppgifter: [
+    { nyckel: 'egen_sak', rubrik: 'Egen sak', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi har domänen testcykel.se hos Loopia.', kalla_id: 'AG1', sammanfattning: '', tacker: '' },
+    { nyckel: 'service_utbud', rubrik: 'Service', avsnitt: 'verksamhet', slag: 'kundens_ord', citat: 'Vi är en cykelverkstad i Umeå.', kalla_id: 'AG1', sammanfattning: '', tacker: 'erbjudande' },
+  ] }));
+  await A.nasta(b.id);
+  const grupper = V.tillVy(await A.lasArende(b.id)).uppdrag.forstatt.map((g) => g.namn);
+  assert(grupper.length >= 2); assert.equal(grupper.at(-1), 'Övrigt', 'Övrigt sist: ' + grupper.join(', '));
+
+  const d = await medSvar();
+  const k = AG.byggKontext(d, { kanda: [], tackning: [], utlosta: [], aterstarAnrop: 10 });
+  const ut = AG.validera(agentUt({
+    behov: [{ nyckel: 'tillval_bokning', citat: 'Vi vill att kunderna ska kunna boka service själva.', kalla_id: 'AG1', fraga: 'Vilka regler?' }],
+    tackning: [{ nyckel: 'doman_kontroll', lage: 'kunden_vet_inte', citat: 'Vi vet inte vad vi har för statistik.', kalla_id: 'AG1' }],
+  }), k);
+  assert.deepEqual(ut.avvisade.map((x) => x.verktyg + ':' + x.orsak), ['notera_behov:ogiltig_nyckel', 'markera_tackning:ogiltig_nyckel']);
+});
+
 test('Ärende lagrat av den driftsatta versionen (133f37f) går att visa, exportera och fortsätta med agenten', async () => {
   // Fixturen är skapad med 133f37f:s lib/arende.ts (se fixturens "kalla"): bankfrågor, behovsfråga uppskjuten efter
   // "vet inte", öppen bankfråga, rättelse, inlämning och signal, men inga fält från den nya kandidaten.

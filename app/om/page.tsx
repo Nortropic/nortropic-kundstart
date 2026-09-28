@@ -1,11 +1,14 @@
 import { standardModell } from '@/lib/arende';
 
 /** Modellens namn för kunden, ur den konfigurerade standardmodellen (KUNDSTART_AI_MODELL). */
+const MODELLNAMN: Record<string, string> = {
+  'openai/gpt-5-mini': 'OpenAI GPT-5 mini',
+  'openai/gpt-4.1-mini': 'OpenAI GPT-4.1 mini',
+  'anthropic/claude-haiku-4.5': 'Anthropic Claude Haiku 4.5',
+};
+const LEVERANTORER: Record<string, string> = { openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', mistral: 'Mistral' };
 function modellNamn(id: string): string {
-  const [leverantor, modell = ''] = id.split('/');
-  const namn: Record<string, string> = { openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', mistral: 'Mistral' };
-  const m = modell.replace(/-/g, ' ').replace(/^gpt (\d)/i, 'GPT-$1').replace(/^claude /i, 'Claude ');
-  return `${namn[leverantor] || leverantor}${m ? ' ' + m : ''}`.trim();
+  return MODELLNAMN[id] || `en modell från ${LEVERANTORER[id.split('/')[0]] || id.split('/')[0]}`;
 }
 
 export default function Om() {

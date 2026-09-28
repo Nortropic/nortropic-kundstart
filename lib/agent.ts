@@ -334,7 +334,8 @@ export function validera(rå: unknown, k: AgentKontext): AgentUtdata | null {
   const behov: AgentUtdata['behov'] = [];
   for (const b of d.behov.slice(0, 3)) {
     const nyckel = nyckelOk(b.nyckel);
-    if (!nyckel || !b.fraga.trim() || !svarKalla(b.kalla_id, b.citat)) { avvisa('notera_behov', 'saknar_ordagrant_kallstod', b.citat, b.kalla_id); continue; }
+    if (!nyckel) { avvisa('notera_behov', 'ogiltig_nyckel', b.citat, b.kalla_id); continue; }
+    if (!b.fraga.trim() || !svarKalla(b.kalla_id, b.citat)) { avvisa('notera_behov', 'saknar_ordagrant_kallstod', b.citat, b.kalla_id); continue; }
     behov.push({ nyckel, citat: b.citat, kalla_id: b.kalla_id, fraga: rensa(b.fraga, 500) });
   }
 
@@ -365,7 +366,8 @@ export function validera(rå: unknown, k: AgentKontext): AgentUtdata | null {
   for (const t of [...d.tackning.slice(0, 8), ...vetInteUppgifter]) {
     const nyckel = nyckelOk(t.nyckel);
     const s = svarKalla(t.kalla_id, t.citat);
-    if (!nyckel || !s) { avvisa('markera_tackning', 'saknar_ordagrant_kallstod', t.citat, t.kalla_id); continue; }
+    if (!nyckel) { avvisa('markera_tackning', 'ogiltig_nyckel', t.citat, t.kalla_id); continue; }
+    if (!s) { avvisa('markera_tackning', 'saknar_ordagrant_kallstod', t.citat, t.kalla_id); continue; }
     if (tackning.some((x) => x.nyckel === nyckel)) continue;
     tackning.push({ nyckel, lage: t.lage, citat: t.citat.trim().slice(0, 600), kalla_id: t.kalla_id, kalla_revision: s.revision });
   }

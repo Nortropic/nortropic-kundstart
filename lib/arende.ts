@@ -519,7 +519,7 @@ export async function sattDoman(id: string, p: { doman: string; kundval: 'har_sy
   const t0 = (fore.tillval || []).find((t) => t.id === 'doman');
   if (t0?.kontroll && t0.historik.some((h) => h.idempotens === p.idempotens)) return { a: fore, ny: false, kontroll: t0.kontroll };
   // Samma domän och samma val igen (dubbelklick, ny flik med ny nyckel): ingen ny kontroll och ingen ny historikrad.
-  if (t0?.kontroll && t0.kundval === p.kundval && t0.system === doman && t0.kalla === 'kontroll') return { a: fore, ny: false, kontroll: t0.kontroll };
+  if (t0?.kontroll && !t0.kontroll.fel && t0.kundval === p.kundval && t0.system === doman && t0.kalla === 'kontroll') return { a: fore, ny: false, kontroll: t0.kontroll };
   const senaste = fore.handelser.filter((h) => h.typ === 'doman_kontroll' && Date.now() - Date.parse(h.tid) < 3600_000).length;
   if (senaste >= MAX_DOMANKONTROLLER_PER_TIMME) throw new Vagrad('för många domänkontroller den senaste timmen; försök igen om en stund', 429);
   const kontroll = await kontrolleraDoman(doman);
@@ -528,7 +528,7 @@ export async function sattDoman(id: string, p: { doman: string; kundval: 'har_sy
     ny = false;
     const t = tillvalRad(a, 'doman');
     if (t.historik.some((h) => h.idempotens === p.idempotens)) return null;
-    if (t.kontroll && t.kundval === p.kundval && t.system === doman && t.kalla === 'kontroll') return null;
+    if (t.kontroll && !t.kontroll.fel && t.kundval === p.kundval && t.system === doman && t.kalla === 'kontroll') return null;
     bump(a);
     t.kundval = p.kundval;
     t.system = doman;
@@ -784,6 +784,7 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
     return a;
   });
   if (upptaget) return vila(las.data, { vantar: !las.data.fragor.some((f) => f.status === 'stalld') && !las.data.samtal_klar });
+  let korning: Anropsutfall | null = null;
   try {
     forsta = las.data;
     const basRevision = forsta.revision;
@@ -801,6 +802,7 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
         aterstarAnrop: Math.max(0, Math.floor((granser().arende_usd - (forsta.ai.kostnad_usd || 0) - (forsta.ai.okand_kostnad_usd || 0)) / 0.01)),
       });
       utfall = await korAgent(forsta, lage, modell, systemText(), kontext.text);
+      korning = utfall;
       if (utfall.svar) {
         ut = validera(utfall.svar.rå, kontext);
         if (!ut) valideringsfel = 'modellens svar saknade användbar fråga eller giltigt avslut';
@@ -869,9 +871,17 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
     // Ett fel efter låset får inte lämna ärendet låst i 80 s: släpp låset om det fortfarande är vårt och låt felet nå
     // kunden, som då ser "Försök igen" (det kunden svarat är redan sparat).
     await uppdateraDok<Arende>(arendeStig(id), (a) => {
-      if (a.ai.pagaende?.id !== lasId) return null;
+      if (a.ai.pagaende?.id !== lasId) return null; // slutskrivningen hann ske (och bokförde) eller en annan tur äger låset
       a.ai.pagaende = null;
-      handelse(a, 'nasta_fel', { fel: e instanceof Error ? e.name : 'okant' });
+      // Ett gjort modellanrop bokförs i ärendet även här, så att ärendets kostnadstak ser det vid ett nytt försök.
+      if (korning) {
+        a.ai.anrop += korning.forsok;
+        a.ai.tokens_in += korning.tokens_in;
+        a.ai.tokens_out += korning.tokens_out;
+        a.ai.kostnad_usd = Math.round(((a.ai.kostnad_usd || 0) + korning.kand_usd) * 1e8) / 1e8;
+        a.ai.okand_kostnad_usd = Math.round(((a.ai.okand_kostnad_usd || 0) + korning.okand_usd) * 1e8) / 1e8;
+      }
+      handelse(a, 'nasta_fel', { fel: e instanceof Error ? e.name : 'okant', kostnad_usd: korning?.kand_usd, okand_usd: korning?.okand_usd });
       return a;
     }).catch(() => undefined);
     throw e;
