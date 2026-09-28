@@ -67,8 +67,7 @@ export default function Material({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void
 
   return (
     <div>
-      <h1>Material</h1>
-      <p>Har ni logotyp, bilder, texter, prislistor, omdömen eller en befintlig webbplats? Lämna det här, så slipper ni beskriva det. En mottagen fil betyder att den är sparad hos oss; vi läser den i nästa steg.</p>
+      <p className="dis liten">Logotyp, bilder, texter, prislistor, omdömen eller er nuvarande webbplats? Lämna det här, så slipper ni beskriva det. Mottaget betyder sparat hos oss; det betyder inte att Digitala har läst det än.</p>
       {vy.material.length > 0 && (
         <ul className="material-lista" aria-label="Lämnat material">
           {vy.material.map((m) => (
@@ -76,7 +75,7 @@ export default function Material({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void
           ))}
         </ul>
       )}
-      <h3>Ladda upp filer</h3>
+      <h3 className="grupp-rubrik">Ladda upp filer</h3>
       <label className="fil-val">
         <span className="liten dis">Bilder (jpg, png, webp, svg), PDF, Word, Excel, PowerPoint, text eller sparad HTML-sida (endast textutdrag). Högst 4 MB per fil; stora bilder förminskas i webbläsaren.</span>
         <input ref={filRef} type="file" accept={ACCEPT} multiple onChange={(e) => void laddaUpp(e)} disabled={lage === 'laddar'} aria-describedby="material-status" />
@@ -84,7 +83,7 @@ export default function Material({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void
       <label className="liten dis" htmlFor="beskrivning">Vad är det? (valfritt)</label>
       <input id="beskrivning" className="falt" value={beskrivning} onChange={(e) => setBeskrivning(e.target.value)} placeholder="T.ex. logotyp, prislista 2026, bilder från jobb" maxLength={300} />
 
-      <h3>Eller lämna en länk</h3>
+      <h3 className="grupp-rubrik">Eller lämna en länk</h3>
       <form onSubmit={(e) => void laggLank(e)}>
         <label className="liten dis" htmlFor="url">Webbadress</label>
         <input id="url" className="falt" type="url" inputMode="url" autoCapitalize="none" autoCorrect="off" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />

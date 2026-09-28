@@ -4,31 +4,52 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnropsFel, anropa, klockslag, lasUtkast, nyNyckel, sparaUtkast } from '@/lib/klient';
 import type { Svar } from '@/lib/typer';
 import type { FragaVy, Vy } from '@/lib/vy';
+import { TillvalKort } from './Tillval';
 
-type NastaSvar = { ok: true; klar: boolean; meddelande: string; ai: { lage: string; anvand: boolean; fallback: boolean; fel?: string; modell?: string }; fragor: FragaVy[]; vy: Vy };
+type NastaSvar = { ok: true; klar: boolean; vantar: boolean; forkastad: boolean; meddelande: string; ai: { lage: string; anvand: boolean; fallback: boolean; fel?: string }; fragor: FragaVy[]; vy: Vy };
 type SvarSvar = { ok: true; ny: boolean; sparat: string; vy: Vy };
 
-export default function Samtal({ vy, setVy, gaTill }: { vy: Vy; setVy: (v: Vy) => void; gaTill: (f: 'samtal' | 'bild' | 'material') => void }) {
+/** Vad som ändrats i "Ditt uppdrag" mellan två lägen, i kundens ord. */
+function andringar(fore: Vy, efter: Vy): string {
+  const delar: string[] = [];
+  const nyaRader = efter.bild.filter((r) => !fore.bild.some((x) => x.nyckel === r.nyckel && x.varde === r.varde));
+  if (nyaRader.length) delar.push(nyaRader.length === 1 ? `${nyaRader[0].rubrik.toLowerCase()}` : `${nyaRader.length} uppgifter`);
+  const nyaVal = efter.uppdrag.valda.filter((t) => !fore.uppdrag.valda.some((x) => x.id === t.id && x.kundval === t.kundval));
+  for (const t of nyaVal) delar.push(`${t.namn}: ${t.kundval_text?.toLowerCase()}`);
+  const nyaRek = efter.uppdrag.rekommenderade.filter((t) => !fore.uppdrag.rekommenderade.some((x) => x.id === t.id));
+  for (const t of nyaRek) delar.push(`rekommendation: ${t.namn.toLowerCase()}`);
+  const nyResearch = efter.uppdrag.research.length - fore.uppdrag.research.length;
+  if (nyResearch > 0) delar.push(nyResearch === 1 ? 'en sak som Digitala undersöker' : `${nyResearch} saker som Digitala undersöker`);
+  return delar.length ? delar.join(' · ') : '';
+}
+
+export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: Vy) => void; visaUppdrag: (avsnitt?: string) => void }) {
   const [hamtar, setHamtar] = useState(false);
   const [hamtFel, setHamtFel] = useState('');
-  const [aiNot, setAiNot] = useState('');
-  const [meddelande, setMeddelande] = useState('');
+  const [andring, setAndring] = useState('');
   const [inlamnar, setInlamnar] = useState(false);
-  const [sparat, setSparat] = useState('');
+  const [igen, setIgen] = useState(0);
   const hamtarRef = useRef(false);
+  const omforsok = useRef(0);
+  const vyRef = useRef(vy);
   const fragaRef = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => { vyRef.current = vy; }, [vy]);
 
-  const hamtaNasta = useCallback(async () => {
+  const hamtaNasta = useCallback(async (fortsatt = false) => {
     if (hamtarRef.current) return;
     hamtarRef.current = true;
     setHamtar(true);
     setHamtFel('');
+    const fore = vyRef.current;
     try {
-      const r = await anropa<NastaSvar>('/api/nasta', { method: 'POST' });
+      const r = await anropa<NastaSvar>('/api/nasta', { method: 'POST', body: JSON.stringify({ fortsatt }) });
       setVy(r.vy);
-      setMeddelande(r.ai.anvand ? r.meddelande : '');
-      setAiNot(r.vy.ai.status === 'reserv' || r.vy.ai.status === 'pausad' ? r.vy.ai.beskrivning : '');
-      setSparat('');
+      setAndring(andringar(fore, r.vy));
+      // Ett annat anrop pågick redan, eller kunden hann ändra något under väntan: försök igen, högst tre gånger.
+      if ((r.vantar || r.forkastad) && omforsok.current < 3) {
+        omforsok.current += 1;
+        window.setTimeout(() => setIgen((x) => x + 1), 1500 * omforsok.current);
+      } else omforsok.current = 0;
     } catch (e) {
       setHamtFel((e as AnropsFel).message);
     } finally {
@@ -40,6 +61,11 @@ export default function Samtal({ vy, setVy, gaTill }: { vy: Vy; setVy: (v: Vy) =
   useEffect(() => {
     if (vy.oppna.length === 0 && !vy.klar && !vy.arende.inlamnad && !hamtarRef.current) void hamtaNasta();
   }, [vy.oppna.length, vy.klar, vy.arende.inlamnad, hamtaNasta]);
+
+  // Begränsat omförsök när ett annat anrop pågick eller kunden hann ändra något under väntan.
+  useEffect(() => {
+    if (igen > 0) void hamtaNasta();
+  }, [igen, hamtaNasta]);
 
   // Ny fråga på plats: flytta fokus till rubriken (skärmläsare och tangentbord), men inte vid första renderingen.
   const forstaFragaId = vy.oppna[0]?.id;
@@ -65,100 +91,100 @@ export default function Samtal({ vy, setVy, gaTill }: { vy: Vy; setVy: (v: Vy) =
     }
   }
 
-  const forsta = vy.dialog.length === 0 && !vy.arende.inlamnad;
-  const kvar = vy.aterstar;
+  const besvarade = vy.samtal.filter((r) => r.svar);
+  const forsta = besvarade.length === 0 && !vy.arende.inlamnad;
+  const kanda = vy.bild.filter((b) => b.typ === 'forifylld');
 
   return (
-    <div>
+    <div className="samtal">
       {vy.arende.inlamnad ? (
-        <Bekraftelse vy={vy} gaTill={gaTill} />
+        <Bekraftelse vy={vy} visaUppdrag={visaUppdrag} fortsatt={() => void hamtaNasta(true)} />
       ) : forsta ? (
         <div className="inledning">
           <h1>Hej, {vy.arende.kund.namn}.</h1>
-          <p>Vi vill förstå er verksamhet innan vi bygger något: vad ni vill uppnå, vilka som hör av sig och hur ni arbetar. Ni svarar i er egen takt, i era egna ord; det går bra att svara ”vet inte”. Allt sparas så att ni kan fortsätta senare.</p>
-          {vy.bild.length > 0 && (
-            <>
-              <h3>Det här vet vi redan</h3>
-              <div className="kant-lista">
-                {vy.bild.slice(0, 6).map((b) => (
-                  <div className="kant" key={b.nyckel}>
-                    <span className="rubrik">{b.rubrik}</span>
-                    <span className="varde">{b.varde}</span>
-                    <span className="kalla">{b.typ === 'forifylld' ? 'Från ' + b.kalla : b.typ === 'kund' ? 'Ni har uppgett' : 'Vår tolkning'}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="liten dis" style={{ marginTop: '0.5rem' }}>
-                Stämmer något inte? <button type="button" className="knapp lank" style={{ minHeight: 0, padding: 0 }} onClick={() => gaTill('bild')}>Rätta under Vår bild av er</button>.
-              </p>
-            </>
+          <p>Här berättar ni om er verksamhet och vad webbplatsen ska hjälpa er med. Ett AI-stöd från Nortropic ställer följdfrågor utifrån det ni säger och samlar allt i <button type="button" className="knapp lank inline" onClick={() => visaUppdrag()}>Ditt uppdrag</button>, där ni kan rätta det som inte stämmer.</p>
+          <p className="dis">Svara med egna ord, så kort eller långt ni vill. ”Vet inte” är ett bra svar. Allt sparas, så ni kan pausa och fortsätta senare, också på en annan enhet.</p>
+          {kanda.length > 0 && (
+            <div className="kant-lista" aria-label="Det här vet vi redan">
+              <h2 className="liten-rubrik">Det här vet vi redan</h2>
+              {kanda.slice(0, 5).map((b) => (
+                <div className="kant" key={b.nyckel}>
+                  <span className="rubrik">{b.rubrik}</span>
+                  <span className="varde">{b.varde}</span>
+                  <span className="kalla">Från {b.kalla}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       ) : null}
 
-      {!vy.arende.inlamnad && vy.dialog.length > 0 && (
-        <>
-          <h2 className="sr">Det ni svarat hittills</h2>
-          <ol className="dialog" aria-label="Det ni svarat hittills">
-            {vy.dialog.map((d, i) => (
-              <li key={d.fraga_id + i}>
-                <p className="fraga">{d.fraga}</p>
-                <p className={'svar' + (d.typ === 'vet_inte' ? ' vet-inte' : '')}>{d.svar}{d.andrad > 0 ? <span className="tyst liten"> (ändrat)</span> : null}</p>
-              </li>
-            ))}
-          </ol>
-        </>
+      {!vy.arende.inlamnad && besvarade.length > 0 && (
+        <ol className="logg" aria-label="Samtalet hittills">
+          {besvarade.map((r) => (
+            <li key={r.fraga_id} className="tur">
+              <div className="agent">
+                {r.inledning && <p className="inledning-text">{r.inledning}</p>}
+                <p className="fraga">{r.fraga}</p>
+              </div>
+              <div className={'kund' + (r.svar!.typ === 'vet_inte' ? ' vet-inte' : '')}>
+                <p className="svar">{r.svar!.text}</p>
+                <span className="meta">{klockslag(r.svar!.tid)}{r.svar!.andrad > 0 ? ' · ändrat' : ''}</span>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {andring && !vy.arende.inlamnad && (
+        <p className="andring" role="status">
+          Uppdaterat i Ditt uppdrag: {andring}. <button type="button" className="knapp lank inline" onClick={() => visaUppdrag()}>Visa</button>
+        </p>
       )}
 
       {!vy.arende.inlamnad && vy.oppna.map((f, i) => (
-        <FragaKort key={f.id} fraga={f} arendeId={vy.arende.id} meddelande={i === 0 ? meddelande : ''} rubrikRef={i === 0 ? fragaRef : undefined} onSparat={(v, tid) => { setVy(v); setMeddelande(''); setSparat(tid); }} />
+        <FragaKort key={f.id} fraga={f} vy={vy} setVy={setVy} rubrikRef={i === 0 ? fragaRef : undefined} onSparat={(v) => { setVy(v); setAndring(''); }} />
       ))}
 
-      {sparat && <p className="status sparat" role="status" aria-live="polite">Sparat {sparat}</p>}
-      {aiNot && <p className="not varn" role="status">{aiNot}</p>}
-      {hamtar && <p className="status" role="status">Väntar på nästa fråga …</p>}
+      {hamtar && <p className="status vantar" role="status">AI-stödet läser det ni skrivit och formulerar nästa fråga …</p>}
       {hamtFel && (
         <p className="not fel" role="alert">
-          {hamtFel} <button type="button" className="knapp lank" onClick={() => void hamtaNasta()}>Försök igen</button>
+          {hamtFel} Det ni svarat är sparat. <button type="button" className="knapp lank inline" onClick={() => void hamtaNasta()}>Försök igen</button>
         </p>
       )}
 
       {!vy.arende.inlamnad && vy.klar && !hamtar && (
-        <div className="aktuell">
+        <div className="aktuell avslut">
           <h2>Det räcker för nu</h2>
-          <p>Tack. Det ni berättat räcker för att vi ska kunna gå vidare. Titta gärna igenom <button type="button" className="knapp lank" style={{ minHeight: 0, padding: 0 }} onClick={() => gaTill('bild')}>vår bild av er</button> och lägg till <button type="button" className="knapp lank" style={{ minHeight: 0, padding: 0 }} onClick={() => gaTill('material')}>material</button> om ni har något, och lämna sedan in genomgången.</p>
-          {vy.senare.length > 0 && <p className="liten dis">Ni ville återkomma om: {vy.senare.map((s) => s.text).join(' ')}</p>}
+          {vy.avslut ? <p className="inledning-text">{vy.avslut}</p> : <p>Tack. Det ni berättat räcker för att vi ska kunna gå vidare.</p>}
+          <p className="dis">Titta gärna igenom <button type="button" className="knapp lank inline" onClick={() => visaUppdrag()}>Ditt uppdrag</button>, välj tillval och lägg till material om ni har. Lämna sedan in, så hämtar Digitala underlaget.</p>
           <div className="rad">
-            <button type="button" className="knapp" onClick={() => void lamnaIn()} disabled={inlamnar}>{inlamnar ? 'Lämnar in …' : 'Lämna in genomgången'}</button>
+            <button type="button" className="knapp" onClick={() => void lamnaIn()} disabled={inlamnar}>{inlamnar ? 'Lämnar in …' : 'Lämna in'}</button>
+            <button type="button" className="knapp sekundar" onClick={() => void hamtaNasta(true)} disabled={hamtar}>Jag vill berätta mer</button>
           </div>
         </div>
       )}
 
-      {vy.dialog.length > 0 && <Tackningsbild vy={vy} setVy={setVy} />}
-      {!vy.arende.inlamnad && !vy.klar && (
+      {!vy.arende.inlamnad && !vy.klar && besvarade.length > 0 && (
         <p className="aterstar">
-          {kvar.viktiga > 0 ? `Kvar just nu: ${kvar.viktiga} ${kvar.viktiga === 1 ? 'fråga' : 'frågor'} som påverkar lösningen` : 'Inga fler frågor som påverkar lösningen just nu'}
-          {kvar.ovriga > 0 ? `, och ${kvar.ovriga} mindre.` : '.'}
-          {vy.dialog.length > 0 && (
-            <>
-              {' '}Ni kan också <button type="button" className="knapp lank" style={{ minHeight: 0, padding: 0 }} onClick={() => void lamnaIn()} disabled={inlamnar}>lämna in det ni har hittills</button>.
-            </>
-          )}
+          {vy.aterstar.viktiga > 0 ? `Viktiga områden som ingen har berört än: ${vy.aterstar.viktiga}.` : 'De viktigaste områdena är berörda.'}{' '}
+          Ni kan <button type="button" className="knapp lank inline" onClick={() => void lamnaIn()} disabled={inlamnar}>lämna in det ni har hittills</button> när som helst.
         </p>
       )}
     </div>
   );
 }
 
-function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga: FragaVy; arendeId: string; meddelande: string; rubrikRef?: React.MutableRefObject<HTMLHeadingElement | null>; onSparat: (v: Vy, tid: string) => void }) {
+function FragaKort({ fraga, vy, setVy, rubrikRef, onSparat }: { fraga: FragaVy; vy: Vy; setVy: (v: Vy) => void; rubrikRef?: React.MutableRefObject<HTMLHeadingElement | null>; onSparat: (v: Vy) => void }) {
   const router = useRouter();
-  const nyckel = arendeId + ':' + fraga.id;
+  const nyckel = vy.arende.id + ':' + fraga.id;
   const [text, setText] = useState('');
   const [idempotens, setIdempotens] = useState('');
   const [val, setVal] = useState('');
   const [lage, setLage] = useState<'tom' | 'osparad' | 'sparar' | 'sparat' | 'fel'>('tom');
   const [fel, setFel] = useState('');
   const [senasteTyp, setSenasteTyp] = useState<Svar['typ']>('text');
+  const [fler, setFler] = useState(false);
 
   useEffect(() => {
     const u = lasUtkast(nyckel);
@@ -182,8 +208,8 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
   async function skicka(typ: Svar['typ']) {
     if (lage === 'sparar') return;
     setSenasteTyp(typ);
-    const innehall = typ === 'val' ? val : text;
-    if (typ !== 'vet_inte' && !innehall.trim()) return;
+    const innehall = typ === 'val' && fraga.typ === 'val' ? val : text;
+    if (typ !== 'vet_inte' && !(typ === 'val' && fraga.typ === 'tillval') && !innehall.trim()) return;
     // En nyckel per fråga och försök: samma nyckel vid återförsök, så ett återförsök eller dubbelklick aldrig ger två rader.
     const id = idempotens || nyNyckel();
     if (!idempotens) {
@@ -196,8 +222,7 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
       const r = await anropa<SvarSvar>('/api/svar', { method: 'POST', body: JSON.stringify({ fraga_id: fraga.id, text: innehall, typ, idempotens: id }) });
       sparaUtkast(nyckel, null);
       setLage('sparat');
-      // ny:false = svaret var redan sparat (samma nyckel eller samma text): vyn från servern gäller, inget tappas
-      onSparat(r.vy, r.ny ? klockslag(r.sparat) : 'tidigare');
+      onSparat(r.vy);
     } catch (e) {
       const f = e as AnropsFel;
       setLage('fel');
@@ -210,75 +235,81 @@ function FragaKort({ fraga, arendeId, meddelande, rubrikRef, onSparat }: { fraga
     try {
       const r = await anropa<{ ok: true; vy: Vy }>('/api/senare', { method: 'POST', body: JSON.stringify({ fraga_id: fraga.id }) });
       // utkastet ligger kvar i sessionStorage tills fliken stängs, så text kunden skrivit inte kastas
-      onSparat(r.vy, '');
+      onSparat(r.vy);
     } catch (e) {
       setLage('fel');
       setFel((e as AnropsFel).message);
     }
   }
 
-  const statusText = lage === 'sparar' ? 'Sparar …' : lage === 'osparad' ? 'Inte sparat än' : lage === 'sparat' ? 'Sparat' : '';
+  const statusText = lage === 'sparar' ? 'Sparar …' : lage === 'osparad' ? 'Inte skickat än' : lage === 'sparat' ? 'Sparat' : '';
+  const tillval = fraga.typ === 'tillval' ? (fraga.tillval || []).map((id) => vy.tillval.find((t) => t.id === id)).filter(Boolean) : [];
 
   return (
     <div className="aktuell">
-      {meddelande && <p className="meddelande">{meddelande}</p>}
+      {fraga.inledning && <p className="inledning-text">{fraga.inledning}</p>}
       <h2 className="fragetext" ref={rubrikRef} tabIndex={-1}>{fraga.text}</h2>
-      {fraga.varfor && <p className="varfor">Varför vi frågar: {fraga.varfor}.</p>}
+      {fraga.varfor && <p className="varfor">Varför vi frågar: {fraga.varfor.replace(/\.$/, '')}.</p>}
       {fraga.typ === 'val' && fraga.alternativ ? (
         <div className="alternativ" role="group" aria-label="Alternativ">
           {fraga.alternativ.map((a) => (
-            <button type="button" key={a} aria-pressed={val === a} onClick={() => setVal(a)}>{a}</button>
+            <button type="button" key={a} aria-pressed={val === a} onClick={() => setVal(val === a ? '' : a)}>{a}</button>
           ))}
         </div>
       ) : null}
+      {tillval.length > 0 && (
+        <div className="tillval-i-fraga" role="group" aria-label="Tillval att ta ställning till">
+          {tillval.map((t) => <TillvalKort key={t!.id} t={t!} setVy={setVy} kompakt />)}
+        </div>
+      )}
       <label className="sr" htmlFor={'svar-' + fraga.id}>Ert svar</label>
-      <textarea id={'svar-' + fraga.id} className="svar-falt" value={text} onChange={(e) => andra(e.target.value)} placeholder={fraga.typ === 'val' ? 'Eller skriv med egna ord' : 'Skriv med egna ord'} enterKeyHint="done" autoCapitalize="sentences" />
+      <textarea id={'svar-' + fraga.id} className="svar-falt" value={text} onChange={(e) => andra(e.target.value)} placeholder={fraga.typ === 'tillval' ? 'Något ni vill tillägga? (valfritt)' : fraga.typ === 'val' ? 'Eller skriv med egna ord' : 'Skriv med egna ord'} enterKeyHint="send" autoCapitalize="sentences" />
       <div className="rad">
-        <button type="button" className="knapp" onClick={() => void skicka(fraga.typ === 'val' && val && !text.trim() ? 'val' : 'text')} disabled={lage === 'sparar' || (!text.trim() && !val)}>{lage === 'sparar' ? 'Sparar …' : 'Spara svar'}</button>
+        {fraga.typ === 'tillval' ? (
+          <button type="button" className="knapp" onClick={() => void skicka('val')} disabled={lage === 'sparar'}>{lage === 'sparar' ? 'Sparar …' : 'Klart, fortsätt'}</button>
+        ) : (
+          <button type="button" className="knapp" onClick={() => void skicka(fraga.typ === 'val' && val && !text.trim() ? 'val' : 'text')} disabled={lage === 'sparar' || (!text.trim() && !val)}>{lage === 'sparar' ? 'Sparar …' : 'Skicka svar'}</button>
+        )}
         <button type="button" className="knapp sekundar" onClick={() => void skicka('vet_inte')} disabled={lage === 'sparar'}>Vet inte</button>
-        <button type="button" className="knapp sekundar" onClick={() => void skicka('ej_tillampligt')} disabled={lage === 'sparar' || !text.trim()}>Gäller inte oss (ange varför)</button>
-        <button type="button" className="knapp sekundar" onClick={() => void skicka('atkomst_saknas')} disabled={lage === 'sparar' || !text.trim()}>Åtkomst saknas (beskriv)</button>
-        <button type="button" className="knapp lank" onClick={() => void senare()} disabled={lage === 'sparar'}>Återkom senare</button>
+        <button type="button" className="knapp lank" aria-expanded={fler} onClick={() => setFler(!fler)}>Fler sätt att svara</button>
       </div>
+      {fler && (
+        <div className="rad fler">
+          <button type="button" className="knapp sekundar" onClick={() => void skicka('ej_tillampligt')} disabled={lage === 'sparar' || !text.trim()}>Gäller inte oss (skriv varför)</button>
+          <button type="button" className="knapp sekundar" onClick={() => void skicka('atkomst_saknas')} disabled={lage === 'sparar' || !text.trim()}>Vi saknar åtkomst (beskriv)</button>
+          <button type="button" className="knapp lank" onClick={() => void senare()} disabled={lage === 'sparar'}>Återkom senare</button>
+        </div>
+      )}
       <p className={'status ' + lage} role="status" aria-live="polite">{statusText}</p>
       {fel && (
         <p className="not fel" role="alert">
-          {fel} <button type="button" className="knapp lank" onClick={() => void skicka(senasteTyp)}>Försök igen</button>
+          Inte sparat: {fel} <button type="button" className="knapp lank inline" onClick={() => void skicka(senasteTyp)}>Försök igen</button>
         </p>
       )}
     </div>
   );
 }
 
-function Bekraftelse({ vy, gaTill }: { vy: Vy; gaTill: (f: 'samtal' | 'bild' | 'material') => void }) {
+function Bekraftelse({ vy, visaUppdrag, fortsatt }: { vy: Vy; visaUppdrag: (avsnitt?: string) => void; fortsatt: () => void }) {
   const i = vy.arende.inlamnad!;
+  const valda = vy.uppdrag.valda;
   return (
     <div className="bekraftelse">
       <h1>Tack, {vy.arende.kund.namn}.</h1>
-      <p>Det här har ni lämnat {klockslag(i.tid)}:</p>
+      <p>Det här lämnade ni {klockslag(i.tid)}:</p>
       <ul>
-        <li>{i.svar} {i.svar === 1 ? 'svar' : 'svar'} i samtalet</li>
+        <li>{i.svar} svar i samtalet</li>
         <li>{i.material} {i.material === 1 ? 'fil eller länk' : 'filer och länkar'}</li>
+        <li>{valda.length ? `${valda.length} tillval: ${valda.map((t) => t.namn).join(', ')}` : 'inga valda tillval'}</li>
         <li>{vy.bild.filter((b) => b.typ === 'ai').length} tolkningar från AI-stödet, som ni kan rätta</li>
       </ul>
-      <h3>Vad som händer nu</h3>
-      <p>{vy.overlamning} Eventuella kompletteringsfrågor visas i det här samtalet när ni öppnar länken igen. Att material är mottaget betyder ännu inte att det är läst.</p>
-      <p className="dis liten">Det här är en inlämning av underlag, inte ett godkännande av en design eller ett avtal om fler tjänster. Ni kan öppna länken igen och ändra eller lägga till; det ni ändrar efter inlämningen syns för oss.</p>
+      <h2 className="liten-rubrik">Vad som händer nu</h2>
+      <p>{vy.overlamning} Kompletterande frågor visas här i samtalet när ni öppnar länken igen. Mottaget material är inte detsamma som läst.</p>
+      <p className="dis liten">Det här är underlag till ert uppdrag, inte ett godkännande av en design, ett köp av tillval eller ett avtal om fler tjänster. Ni kan ändra och lägga till när som helst; ändringar efter inlämningen syns för Digitala.</p>
       <div className="rad">
-        <button type="button" className="knapp sekundar" onClick={() => gaTill('bild')}>Se vår bild av er</button>
-        <button type="button" className="knapp sekundar" onClick={() => gaTill('material')}>Lägg till material</button>
+        <button type="button" className="knapp sekundar" onClick={() => visaUppdrag()}>Se Ditt uppdrag</button>
+        <button type="button" className="knapp sekundar" onClick={fortsatt}>Jag vill berätta mer</button>
       </div>
     </div>
   );
-}
-
-function Tackningsbild({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void }) {
-  const [fel, setFel] = useState('');
-  async function foljUpp(id: string) {
-    try { const r = await anropa<{ok:true;vy:Vy}>('/api/senare', {method:'POST',body:JSON.stringify({fraga_id:id,oppna:true})});setVy(r.vy);setFel(''); }
-    catch(e) {setFel((e as Error).message);}
-  }
-  const oppna = vy.tackning.filter(t => ['inte_undersokt', 'kunden_vet_inte', 'atkomst_saknas', 'aterkom_senare'].includes(t.status));
-  const status: Record<string, string> = { inte_undersokt: 'ännu inte undersökt', kunden_vet_inte: 'ni vet inte ännu', atkomst_saknas: 'åtkomst saknas', aterkom_senare: 'ni vill återkomma' };
-  return <details className="not"><summary>Vad som fortfarande behöver undersökas ({oppna.length})</summary><p>Ni kan lämna in redan nu. De här frågorna följer med som öppna frågor och blir inte automatiskt ”behövs inte”. Digitala väljer relevanta kompletteringar.</p><ul>{oppna.map(t => <li key={t.nyckel}>{t.fraga} — {status[t.status]}</li>)}</ul>{vy.behov.filter(b => b.status !== 'besvarad').map(b => <p key={b.nyckel}>{b.status === 'tackt' ? 'Tolkat från era ord – kan följas upp' : 'Öppet behov från era ord'}: ”{b.citat}”{b.kan_oppnas && <button type="button" className="knapp lank" onClick={() => void foljUpp(b.id)}>Följ upp frågan</button>}</p>)}{fel && <p role="alert">{fel}</p>}</details>;
 }

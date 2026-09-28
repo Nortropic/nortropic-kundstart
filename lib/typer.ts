@@ -28,10 +28,14 @@ export interface Fraga {
   text: string;
   paverkar: string;
   utlost_av?: string | null;
-  kalla: 'bank' | 'ai-omformulering' | 'returfraga' | 'behov';
+  kalla: 'bank' | 'ai-omformulering' | 'returfraga' | 'behov' | 'agent';
   banktext?: string;
-  typ: 'oppen' | 'val';
+  typ: 'oppen' | 'val' | 'tillval';
   alternativ?: string[];
+  /** Agentens kundvända återkoppling före frågan (det den förstått), sparad så att samtalet kan visas igen. */
+  inledning?: string;
+  /** Tillval som visas som kontroller i frågan (typ 'tillval'). */
+  tillval?: string[];
   omgang: number;
   stalld: string;
   oppnad_revision?: number;
@@ -93,6 +97,13 @@ export interface AiTillstand {
   anrop: number;
   tokens_in: number;
   tokens_out: number;
+  /** Faktisk kostnad enligt gatewayens usage.cost (USD), summerad per ärende; okänd förbrukning redovisas separat. */
+  kostnad_usd?: number;
+  okand_kostnad_usd?: number;
+  /** Pågående modellanrop för ärendet: hindrar två samtidiga anrop (två flikar, dubbelklick). */
+  pagaende?: { id: string; till: string } | null;
+  senaste_ms?: number;
+  budget_skal?: string;
   fel: number;
   fel_i_rad?: number;
   senaste_fel?: string;
@@ -137,6 +148,93 @@ export interface Arende {
   kvittenser?: { signal_id: string; revision: number; utforare: string; import_sha256: string; tid: string }[];
   returfragor?: { idempotens: string; bas_revision: number; utforare: string; fragor: string[]; tid: string }[];
   behov?: Behov[];
+  /** Kunduppgifter och tolkningar som agenten noterat med ordagrant källcitat (servern verifierar citatet). */
+  uppgifter?: Uppgift[];
+  /** Integrationstillval: kundens val, agentens rekommendation och Digitalas status hålls isär. */
+  tillval?: Tillval[];
+  /** Avgränsad research som agenten beställt av Digitala; status 'bestalld' betyder att arbetet inte har börjat. */
+  research?: ResearchBestallning[];
+  /** Agentens täckningsmarkeringar för bankens områden: vet inte, inte tillämpligt, avstår. */
+  tackning_agent?: TackningMarkering[];
+  /** Samtalet avslutat av agenten (eller standardlistan) vid en viss revision; ny kundhandling kan öppna det igen. */
+  samtal_klar?: { revision: number; tid: string; meddelande: string; valjare: 'ai' | 'regelstyrd' } | null;
+}
+
+export interface Uppgift {
+  id: string;
+  nyckel: string;
+  rubrik: string;
+  avsnitt: 'mal' | 'verksamhet';
+  /** 'kunden uppger' när värdet är kundens egna ord (ordagrant citat); 'tolkning' när agenten sammanfattat. */
+  status: 'kunden uppger' | 'tolkning';
+  varde: string;
+  citat: string;
+  kalla_typ: 'svar' | 'material';
+  kalla_id: string; // fråge-id eller material-id
+  kalla_revision: number;
+  bas_revision: number;
+  revision: number;
+  tid: string;
+  giltig: boolean;
+  forkastad_skal?: string;
+  modell?: string;
+}
+
+export type TillvalKundval = 'onskat' | 'har_system' | 'hjalp' | 'inte_nu';
+export type TillvalDigitala = 'inkluderat' | 'vantar_atkomst' | 'anslutet_provat';
+
+export interface TillvalHandelse {
+  tid: string;
+  revision: number;
+  kundval: TillvalKundval | null;
+  system?: string;
+  not?: string;
+  kalla: 'kontroll' | 'samtal';
+  fraga_id?: string;
+  citat?: string;
+  idempotens?: string;
+}
+
+export interface Tillval {
+  id: string; // katalog-id eller annat_N
+  beskrivning?: string; // kundens beskrivning av ett annat behov
+  kundval: TillvalKundval | null;
+  system?: string;
+  not?: string;
+  kalla?: 'kontroll' | 'samtal';
+  citat?: string;
+  fraga_id?: string;
+  revision: number; // revision där kundens val senast ändrades
+  rekommendation?: { text: string; bas_revision: number; revision: number; tid: string; modell?: string; giltig: boolean };
+  digitala?: { status: TillvalDigitala; not: string; kalla: string; utforare: string; tid: string; idempotens: string } | null;
+  /** Senaste domänkontroll (tillvalet doman): öppna DNS/RDAP-uppgifter, en daterad observation. */
+  kontroll?: import('./doman').DomanKontroll | null;
+  historik: TillvalHandelse[];
+}
+
+export interface ResearchBestallning {
+  id: string;
+  fraga: string;
+  varfor: string;
+  /** Täckningsnyckel som researchen besvarar, om någon (då frågas kunden inte om den). */
+  nyckel?: string;
+  kalla_typ: 'svar' | 'material' | 'kand';
+  kalla_id: string;
+  citat: string;
+  status: 'bestalld';
+  revision: number;
+  tid: string;
+  modell?: string;
+}
+
+export interface TackningMarkering {
+  nyckel: string;
+  lage: 'kunden_vet_inte' | 'inte_tillampligt' | 'kunden_avstar';
+  citat: string;
+  fraga_id: string;
+  revision: number;
+  tid: string;
+  giltig: boolean;
 }
 
 export interface Lank {

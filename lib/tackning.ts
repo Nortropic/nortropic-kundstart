@@ -46,13 +46,33 @@ export function behovStatus(a: Arende, b: Behov): Behov['status'] {
 }
 export function behovMedStatus(a: Arende) { return (a.behov || []).map(b => ({ ...b, status: behovStatus(a, b) })); }
 
+export type TackningStatus = 'uppgift_finns' | 'kunden_vet_inte' | 'inte_tillampligt' | 'atkomst_saknas' | 'kunden_avstar' | 'tolkning_att_kontrollera' | 'forifylld_att_kontrollera' | 'undersoks_av_digitala' | 'aterkom_senare' | 'inte_undersokt';
+
+/**
+ * Täckning per område: bankens nycklar, noterade behov och returfrågor. Kundens senaste besked vinner (svar,
+ * rättelse, kundens egna ord som agenten noterat, eller agentens citatbundna markering vet inte / gäller inte /
+ * avstår); därefter tolkning, förifyllt, beställd research och uppskjutet. Obesvarat förblir inte_undersokt.
+ */
 export function tackning(a: Arende) {
-  const frågor = [...BANK.grund, ...(a.behov || []).map(b => ({nyckel:b.nyckel,omrade:'H',text:b.fraga})), ...a.fragor.filter(f => f.kalla === 'returfraga' || f.kalla === 'behov')];
+  const frågor = [...BANK.grund.map(g => ({ nyckel: g.nyckel, omrade: g.omrade, text: g.text, prio: g.prio })), ...(a.behov || []).map(b => ({ nyckel: b.nyckel, omrade: 'H', text: b.fraga, prio: 1 })), ...a.fragor.filter(f => f.kalla === 'returfraga' || f.kalla === 'behov').map(f => ({ nyckel: f.nyckel, omrade: f.omrade, text: f.text, prio: 1 }))];
   return frågor.filter((f, ix, arr) => arr.findIndex(x => x.nyckel === f.nyckel) === ix).map(f => {
+    type Besked = { status: TackningStatus; revision: number; kalla: string };
+    const besked: Besked[] = [];
     const s = [...a.svar].reverse().find(s => s.nyckel === f.nyckel);
+    if (s) besked.push({ status: s.typ === 'vet_inte' ? 'kunden_vet_inte' : s.typ === 'ej_tillampligt' ? 'inte_tillampligt' : s.typ === 'atkomst_saknas' ? 'atkomst_saknas' : 'uppgift_finns', revision: s.revision, kalla: s.fraga_id });
     const r = [...a.rattelser].reverse().find(r => r.nyckel === f.nyckel);
+    if (r) besked.push({ status: 'uppgift_finns', revision: r.revision + 0.5, kalla: `rattelse:${r.revision}` });
+    const u = [...(a.uppgifter || [])].reverse().find(u => u.giltig && u.status === 'kunden uppger' && u.nyckel === f.nyckel);
+    if (u) besked.push({ status: 'uppgift_finns', revision: u.kalla_revision + 0.25, kalla: `${u.kalla_id} (citat ${u.id})` });
+    const m = [...(a.tackning_agent || [])].reverse().find(m => m.giltig && m.nyckel === f.nyckel);
+    if (m) besked.push({ status: m.lage, revision: m.revision + 0.25, kalla: `${m.fraga_id} (citat)` });
+    const senast = besked.sort((x, y) => y.revision - x.revision)[0];
     const g = a.fragor.find(g => g.nyckel === f.nyckel);
-    const status = r && (!s || r.revision > s.revision) ? 'uppgift_finns' : s?.typ === 'vet_inte' ? 'kunden_vet_inte' : s?.typ === 'ej_tillampligt' ? 'inte_tillampligt' : s?.typ === 'atkomst_saknas' ? 'atkomst_saknas' : s ? 'uppgift_finns' : a.fakta_ai.some(x => x.nyckel === f.nyckel && x.giltig) ? 'tolkning_att_kontrollera' : a.fakta_forifyllda.some(x => x.nyckel === f.nyckel && x.status !== 'okänt') ? 'forifylld_att_kontrollera' : g?.status === 'senare' ? 'aterkom_senare' : 'inte_undersokt';
-    return { nyckel: f.nyckel, omrade: f.omrade, fraga: f.text, status, kalla: r && (!s || r.revision > s.revision) ? `rattelse:${r.revision}` : s?.fraga_id || null };
+    const status: TackningStatus = senast ? senast.status
+      : a.fakta_ai.some(x => x.nyckel === f.nyckel && x.giltig) || (a.uppgifter || []).some(x => x.giltig && x.status === 'tolkning' && x.nyckel === f.nyckel) ? 'tolkning_att_kontrollera'
+      : a.fakta_forifyllda.some(x => x.nyckel === f.nyckel && x.status !== 'okänt') ? 'forifylld_att_kontrollera'
+      : (a.research || []).some(x => x.nyckel === f.nyckel) ? 'undersoks_av_digitala'
+      : g?.status === 'senare' ? 'aterkom_senare' : 'inte_undersokt';
+    return { nyckel: f.nyckel, omrade: f.omrade, fraga: f.text, prio: f.prio, status, kalla: senast?.kalla || null };
   });
 }
