@@ -46,6 +46,7 @@ export default defineConfig({
         url: bas + '/',
         reuseExistingServer: true,
         timeout: 60_000,
-        env: { KUNDSTART_AI: process.env.KUNDSTART_AI || 'regelstyrd' },
+        // Proven får en egen katalog för testlägets modellval, så att de aldrig ändrar ägarens eget val.
+        env: { KUNDSTART_AI: process.env.KUNDSTART_AI || 'regelstyrd', KUNDSTART_PROV_DATA: process.env.KUNDSTART_PROV_DATA || '.scratch/prov-data' },
       },
 });
