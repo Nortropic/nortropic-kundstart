@@ -22,6 +22,38 @@ export async function signaler(cursor?: string) {
   return { schema: 'kundstart-signaler/1', signaler, cursor: sida.hasMore ? sida.cursor : null };
 }
 
+/** Intern översikt för ägarens arbetsplats: bara metadata per ärende, aldrig kundtext, svar, material eller länkar. */
+export interface ArendeRad {
+  id: string;
+  kund: string;
+  testdialog: boolean;
+  skapad: string;
+  uppdaterad: string;
+  revision: number;
+  svar: number;
+  material: number;
+  senaste_inlamning: { tid: string; revision: number; svar: number; material: number } | null;
+  andrat_efter_inlamning: boolean;
+}
+export async function arendelista(cursor?: string) {
+  const sida = await list({ prefix: 'arenden/', cursor, limit: 100 });
+  const arenden: ArendeRad[] = [];
+  let olasbara = 0;  // ett trasigt dokument fäller aldrig listan för de andra; det räknas i stället
+  for (const blob of sida.blobs) {
+    let a: Arende | undefined;
+    try { a = (await lasDok<Arende>(blob.pathname))?.data; } catch { olasbara++; continue; }
+    if (!a || a.schema !== 'kundstart-arende/1' || !a.kund || !Array.isArray(a.svar) || !Array.isArray(a.material)) { olasbara++; continue; }
+    const inl = a.inlamningar?.length ? a.inlamningar[a.inlamningar.length - 1] : null;
+    arenden.push({
+      id: a.id, kund: a.kund.namn, testdialog: !!a.testdialog, skapad: a.skapad, uppdaterad: a.uppdaterad, revision: a.revision,
+      svar: a.svar.length, material: a.material.length,
+      senaste_inlamning: inl ? { tid: inl.tid, revision: inl.revision, svar: inl.svar, material: inl.material } : null,
+      andrat_efter_inlamning: !!inl && a.revision > inl.revision,
+    });
+  }
+  return { schema: 'kundstart-arenden/1', arenden, olasbara, cursor: sida.hasMore ? sida.cursor : null };
+}
+
 function ansvar(v: string) { return typeof v === 'string' && /^[a-zA-Z0-9_.@/-]{2,120}$/.test(v); }
 export async function kvittera(id: string, p: { signal_id: string; revision: number; utforare: string; import_sha256: string }) {
   if (!ansvar(p.utforare) || !/^[a-f0-9]{64}$/.test(p.import_sha256 || '')) throw new Vagrad('utförare och importens sha256 krävs');

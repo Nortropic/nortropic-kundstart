@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Vagrad, skapaArende } from '@/lib/arende';
 import { kravInternNyckel } from '@/lib/intern';
+import { arendelista } from '@/lib/overlamning';
 import type { AiLage, Fakta } from '@/lib/typer';
 
 /** Skapar ett ärende ur kundmappens kända uppgifter och ger en inbjudningslänk. Länkens värde returneras en gång. */
@@ -17,4 +18,11 @@ export async function POST(req: Request) {
     if (e instanceof Vagrad) return NextResponse.json({ meddelande: e.message }, { status: e.status });
     throw e;
   }
+}
+
+/** Lista över ärendenas metadata (kundstart-arenden/1) för ägarens interna arbetsplats; ändrar ingenting. */
+export async function GET(req: Request) {
+  const nek = kravInternNyckel(req);
+  if (nek) return nek;
+  return NextResponse.json(await arendelista(new URL(req.url).searchParams.get('cursor') || undefined), { headers: { 'Cache-Control': 'no-store' } });
 }
