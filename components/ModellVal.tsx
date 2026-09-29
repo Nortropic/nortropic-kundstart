@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { ProvVy } from '@/lib/provlage';
 import { Ikon } from './Ikon';
 
@@ -17,6 +17,18 @@ export default function ModellVal({ prov, oppen, setOppen, byt, status }: {
 }) {
   const ram = useRef<HTMLDivElement | null>(null);
   const knapp = useRef<HTMLButtonElement | null>(null);
+  const meny = useRef<HTMLDivElement | null>(null);
+
+  // Menyn öppnas uppåt när den ryms ovanför knappen, annars nedåt; mätt före utritningen.
+  useLayoutEffect(() => {
+    const m = meny.current;
+    const r = ram.current?.getBoundingClientRect();
+    if (!oppen || !m || !r) return;
+    const upp = r.top > m.offsetHeight + 16;
+    m.dataset.riktning = upp ? 'upp' : 'ner';
+    // På bred skärm får menyn högst det utrymme som finns åt det hållet; på smal skärm är den ett ark (CSS).
+    m.style.maxHeight = window.innerWidth >= 640 ? Math.max(240, (upp ? r.top : window.innerHeight - r.bottom) - 24) + 'px' : '';
+  }, [oppen]);
 
   useEffect(() => {
     if (!oppen) return;
@@ -36,7 +48,7 @@ export default function ModellVal({ prov, oppen, setOppen, byt, status }: {
         {prov.namn} · {prov.anstrangning}<Ikon namn="ner" storlek={16} />
       </button>
       {oppen && (
-        <div className="modellmeny" role="dialog" aria-label="Modell och ansträngning i testläget"
+        <div className="modellmeny" ref={meny} role="dialog" aria-label="Modell och ansträngning i testläget"
           onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setOppen(false); knapp.current?.focus(); } }}>
           <fieldset className="mv-grupp">
             <legend>Modell</legend>
