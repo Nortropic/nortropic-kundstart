@@ -480,6 +480,7 @@ test('Utan uttryckligt KUNDSTART_AI anropas ingen gateway, inte heller för ett 
     assert.equal(anrop.filter((x) => x.url.includes('ai-gateway')).length, 0, 'inget gateway-anrop');
     assert.equal(r.ai.lage, 'regelstyrd'); assert.equal(r.fragor.length, 1, 'standardlistan ställer nästa fråga');
     assert.equal(V.tillVy(r.a).ai.status, 'av'); assert.match(V.tillVy(r.a).ai.beskrivning, /AI-stöd: av/);
+    assert.equal(A.effektivtLage('okant'), 'regelstyrd', 'ett okänt lagrat läge blir standardlistan');
     process.env.VERCEL = '1';
     assert.equal(A.aiLageStandard(), 'regelstyrd', 'nya ärenden på Vercel får standardlistan');
   } finally {
@@ -522,6 +523,39 @@ test('Testlägets val: listorna, privat fil, oläsbar fil skrivs aldrig över, b
   } finally {
     process.env.KUNDSTART_AI = 'gateway'; delete process.env.VERCEL;
     if (fore === undefined) delete process.env.KUNDSTART_PROV_DATA; else process.env.KUNDSTART_PROV_DATA = fore;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('claude -p i testläget: bara modell och ansträngning ur listorna som flaggor, inga nycklar i barnprocessens miljö', async () => {
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'kundstart-cli-'));
+  const ut = path.join(dir, 'ut');
+  // Ett låtsat claude-kommando först i PATH: skriver ned argument och miljö och svarar som claude -p --output-format json.
+  fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\nfor a in "$@"; do printf \'%s\\n\' "$a"; done > "$PROV_UT.args"\nenv > "$PROV_UT.env"\ncat > /dev/null\nprintf \'{"structured_output":{"ok":true},"usage":{"input_tokens":3,"output_tokens":2},"total_cost_usd":0.01}\'\n', { mode: 0o755 });
+  const nycklar = { ANTHROPIC_API_KEY: 'provnyckel-anthropic', BLOB_READ_WRITE_TOKEN: 'provnyckel-blob', VERCEL_OIDC_TOKEN: 'provnyckel-oidc' };
+  const fore = { PATH: process.env.PATH, ...Object.fromEntries(Object.keys(nycklar).map((k) => [k, process.env[k]])) };
+  process.env.PATH = dir + ':' + process.env.PATH; process.env.PROV_UT = ut; Object.assign(process.env, nycklar);
+  const begaran = { modell: 'claude-sonnet-5', system: 'Systemprompt på en rad.', anvandare: 'hej', schemaNamn: 's', schema: { type: 'object' }, maxTokens: 100, timeoutMs: 5000 };
+  try {
+    const r = await MO.viaClaudeCli({ ...begaran, anstrangning: 'turbo --dangerously-skip-permissions' });
+    assert.deepEqual(r.rå, { ok: true }); assert.equal(r.kostnad_usd, null, 'kvot, inte kostnad');
+    const args = fs.readFileSync(ut + '.args', 'utf8').split('\n');
+    assert.equal(args[args.indexOf('--effort') + 1], 'low', 'okänd ansträngning blir low');
+    assert.equal(args[args.indexOf('--model') + 1], 'claude-sonnet-5');
+    assert(!args.some((x) => x.includes('dangerously')), 'inga egna flaggor når claude');
+    const env = fs.readFileSync(ut + '.env', 'utf8');
+    assert.match(env, /^PROV_UT=/m, 'miljön skrevs ned');
+    for (const namn of ['ANTHROPIC_API_KEY', 'AI_GATEWAY_API_KEY', 'KUNDSTART_AI', 'BLOB_READ_WRITE_TOKEN', 'VERCEL_OIDC_TOKEN']) {
+      assert(process.env[namn], namn + ' är satt i provet'); assert(!new RegExp('^' + namn + '=', 'm').test(env), namn + ' ärvs inte');
+    }
+    assert.match(env, /^CLAUDE_CODE_DISABLE_AUTO_MEMORY=1$/m);
+    await MO.viaClaudeCli({ ...begaran, modell: 'openai/gpt-5-mini', anstrangning: 'max' });
+    const args2 = fs.readFileSync(ut + '.args', 'utf8').split('\n');
+    assert.equal(args2.indexOf('--model'), -1, 'en gateway-modell skickas aldrig till claude'); assert.equal(args2[args2.indexOf('--effort') + 1], 'max');
+  } finally {
+    delete process.env.PROV_UT;
+    for (const [k, v] of Object.entries(fore)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

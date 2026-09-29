@@ -121,7 +121,7 @@ export async function viaClaudeCli(b: Begaran): Promise<ModellSvar> {
   if (process.env.VERCEL) throw new ModellFel('atkomst', false, { skal: 'claude-cli är bara för lokala prov' });
   const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV };
   for (const [k, v] of Object.entries(process.env)) {
-    if (v === undefined || k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_') || k === 'ANTHROPIC_API_KEY' || k.startsWith('KUNDSTART_') || k.startsWith('BLOB_') || k.startsWith('VERCEL')) continue;
+    if (v === undefined || k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_') || k === 'ANTHROPIC_API_KEY' || k === 'AI_GATEWAY_API_KEY' || k.startsWith('KUNDSTART_') || k.startsWith('BLOB_') || k.startsWith('VERCEL')) continue;
     env[k] = v;
   }
   env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';

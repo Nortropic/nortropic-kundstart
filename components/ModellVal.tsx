@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef } from 'react';
 import type { ProvVy } from '@/lib/provlage';
 import { Ikon } from './Ikon';
 
@@ -18,22 +18,25 @@ export default function ModellVal({ prov, oppen, setOppen, byt, status }: {
   const ram = useRef<HTMLDivElement | null>(null);
   const knapp = useRef<HTMLButtonElement | null>(null);
   const meny = useRef<HTMLDivElement | null>(null);
+  const grupp = useId(); // egna radiogrupper per skrivruta, även när två frågor är öppna
 
   // Menyn öppnas uppåt när den ryms ovanför knappen, annars nedåt; mätt före utritningen.
   useLayoutEffect(() => {
     const m = meny.current;
     const r = ram.current?.getBoundingClientRect();
     if (!oppen || !m || !r) return;
-    const upp = r.top > m.offsetHeight + 16;
+    const ovan = r.top - 24;
+    const nedan = window.innerHeight - r.bottom - 24;
+    const upp = ovan >= m.offsetHeight || ovan > nedan;
     m.dataset.riktning = upp ? 'upp' : 'ner';
     // På bred skärm får menyn högst det utrymme som finns åt det hållet; på smal skärm är den ett ark (CSS).
-    m.style.maxHeight = window.innerWidth >= 640 ? Math.max(240, (upp ? r.top : window.innerHeight - r.bottom) - 24) + 'px' : '';
+    m.style.maxHeight = window.innerWidth >= 640 ? Math.max(160, upp ? ovan : nedan) + 'px' : '';
   }, [oppen]);
 
   useEffect(() => {
     if (!oppen) return;
     // Fokus in i menyn på den valda modellen; klick utanför stänger.
-    ram.current?.querySelector<HTMLInputElement>('input[name="prov-modell"]:checked')?.focus();
+    ram.current?.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.focus();
     const utanfor = (e: MouseEvent) => {
       if (ram.current && !ram.current.contains(e.target as Node)) setOppen(false);
     };
@@ -54,7 +57,7 @@ export default function ModellVal({ prov, oppen, setOppen, byt, status }: {
             <legend>Modell</legend>
             {prov.modeller.map((m) => (
               <label key={m.id} className={'mv-modell' + (m.id === prov.modell ? ' vald' : '')}>
-                <input type="radio" name="prov-modell" value={m.id} checked={m.id === prov.modell} onChange={() => byt(m.id, prov.anstrangning)} />
+                <input type="radio" name={grupp + '-modell'} value={m.id} checked={m.id === prov.modell} onChange={() => byt(m.id, prov.anstrangning)} />
                 <span className="mv-namn">{m.namn}</span>
                 <span className="mv-om">{m.om}</span>
               </label>
@@ -65,7 +68,7 @@ export default function ModellVal({ prov, oppen, setOppen, byt, status }: {
             <div className="mv-nivaer">
               {prov.nivaer.map((n) => (
                 <label key={n} className={'mv-niva' + (n === prov.anstrangning ? ' vald' : '')}>
-                  <input type="radio" name="prov-niva" value={n} checked={n === prov.anstrangning} onChange={() => byt(prov.modell, n)} />
+                  <input type="radio" name={grupp + '-niva'} value={n} checked={n === prov.anstrangning} onChange={() => byt(prov.modell, n)} />
                   <span>{n}</span>
                 </label>
               ))}

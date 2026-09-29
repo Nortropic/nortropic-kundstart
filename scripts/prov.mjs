@@ -76,6 +76,10 @@ function modellval() {
 async function start() {
   const p = pid();
   if (p && (await svarar())) return console.log(`Testläget kör redan på ${BAS} (pid ${p}).`);
+  if (p) {
+    console.error(`En tidigare testserver (pid ${p}) lever men svarar inte än. Vänta en stund, eller stoppa den: npm run prov -- stopp`);
+    return 1;
+  }
   if (await svarar()) {
     console.error(`Port ${PORT} används av en annan process. Stoppa den först (lsof -nP -iTCP:${PORT} -sTCP:LISTEN).`);
     return 1;

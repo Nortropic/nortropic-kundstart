@@ -51,10 +51,15 @@ test('testläget: modell och ansträngning väljs i skrivrutan och med /model oc
     await falt.fill('/model gpt');
     await falt.press('ControlOrMeta+Enter');
     await expect(page.locator('.mv-status')).toHaveText(/^Okänd modell: gpt\./);
+    // Också "Vet inte" kör kommandot i stället för att spara det som svar.
+    await falt.fill('/effort medium');
+    await page.getByRole('button', { name: 'Vet inte' }).first().click();
+    await expect(page.locator('.mv-status')).toHaveText('Haiku 4.5 · medium gäller från nästa fråga.');
+    await expect(falt).toHaveValue('');
     await expect(page.locator('.logg .kund')).toHaveCount(0);
 
     const las = await installningar(page);
-    expect([las.status, las.data.modell, las.data.anstrangning]).toEqual([200, 'claude-haiku-4-5-20251001', 'high']);
+    expect([las.status, las.data.modell, las.data.anstrangning]).toEqual([200, 'claude-haiku-4-5-20251001', 'medium']);
     expect((await installningar(page, { modell: 'claude-opus-5', anstrangning: 'low' }, false)).status, 'utan ytans huvud').toBe(403);
     expect((await installningar(page, { modell: 'openai/gpt-5-mini', anstrangning: 'low' })).status, 'okänd modell').toBe(400);
   } finally {

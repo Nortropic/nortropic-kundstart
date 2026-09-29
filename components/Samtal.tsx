@@ -270,6 +270,8 @@ function FragaKort({ fraga, vy, setVy, visaUppdrag, lage: plats, rubrikRef, onSp
 
   async function skicka(typ: Svar['typ']) {
     if (lage === 'sparar') return;
+    // Testlägets /model och /effort sparas aldrig som svar, oavsett vilken knapp som skickar.
+    if (kommando(text)) return;
     setSenasteTyp(typ);
     const innehall = typ === 'val' && fraga.typ === 'val' ? val : text;
     if (typ !== 'vet_inte' && !(typ === 'val' && fraga.typ === 'tillval') && !innehall.trim()) return;
@@ -355,7 +357,6 @@ function FragaKort({ fraga, vy, setVy, visaUppdrag, lage: plats, rubrikRef, onSp
   const tillval = fraga.typ === 'tillval' ? (fraga.tillval || []).map((id) => vy.tillval.find((t) => t.id === id)).filter(Boolean) : [];
   const sparar = lage === 'sparar';
   const primar = () => {
-    if (kommando(text)) return;
     if (fraga.typ === 'tillval') void skicka('val');
     else if (text.trim() || val) void skicka(fraga.typ === 'val' && val && !text.trim() ? 'val' : 'text');
   };
@@ -389,7 +390,7 @@ function FragaKort({ fraga, vy, setVy, visaUppdrag, lage: plats, rubrikRef, onSp
             placeholder={fraga.typ === 'tillval' ? 'Något ni vill tillägga? (valfritt)' : fraga.typ === 'val' ? 'Eller skriv med egna ord' : 'Skriv med egna ord'} enterKeyHint="send" autoCapitalize="sentences" />
           <div className="ruta-rad">
             {fraga.typ === 'tillval' ? (
-              <button type="button" className="knapp skicka text" onClick={() => { if (!kommando(text)) void skicka('val'); }} disabled={sparar}>{sparar ? 'Sparar …' : 'Klart, fortsätt'}</button>
+              <button type="button" className="knapp skicka text" onClick={() => void skicka('val')} disabled={sparar}>{sparar ? 'Sparar …' : 'Klart, fortsätt'}</button>
             ) : (
               <button type="button" className="knapp skicka" aria-label={sparar ? undefined : 'Skicka svar'} onClick={primar} disabled={sparar || (!text.trim() && !val)}>
                 {sparar ? 'Sparar …' : <><span className="skicka-text" aria-hidden="true">Skicka</span><Ikon namn="upp" /></>}

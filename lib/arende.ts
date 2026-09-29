@@ -60,9 +60,9 @@ export function gatewayPa(): boolean {
 
 /** Det läge ett ärende faktiskt får i den här miljön: ett läge som miljön inte tillåter blir standardlistan. */
 export function effektivtLage(lage: AiLage): AiLage {
-  if (lage === 'gateway' && !gatewayPa()) return 'regelstyrd';
-  if (lage === 'claude-cli' && !provTillatet()) return 'regelstyrd';
-  return lage;
+  if (lage === 'gateway' && gatewayPa()) return 'gateway';
+  if (lage === 'claude-cli' && provTillatet()) return 'claude-cli';
+  return 'regelstyrd';
 }
 
 export function standardModell(): string {
