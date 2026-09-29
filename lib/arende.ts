@@ -10,6 +10,7 @@ import { kontrolleraDoman, normaliseraDoman, type DomanKontroll } from './doman'
 import { lasDok, laggFil, skapaDok, taBortFil, uppdateraDok } from './lagring';
 import { MAX_ANTAL, MAX_TOTAL, extrahera } from './material';
 import { ModellFel, viaClaudeCli, viaGateway, type ModellSvar } from './modell';
+import { lasProv, provTillatet, turTimeoutMs, type ProvVal } from './provlage';
 import { signalera } from './overlamning';
 import { samlaBehov, laggBehov, tackning, behovMedStatus } from './tackning';
 import { TILLVAL_IDS, annatId, arAnnat } from './tillval';
@@ -43,10 +44,25 @@ export const nu = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 const arendeStig = (id: string) => `arenden/${id}.json`;
 const lankStig = (hash: string) => `lankar/${hash}.json`;
 
+/** Nya ärendens läge. Utan uttryckligt KUNDSTART_AI gäller standardlistan överallt, även på Vercel: ingen kostnads-AI
+ *  (ägarens besked 2026-09-29). gateway slås på med KUNDSTART_AI=gateway, testläget med KUNDSTART_AI=claude-cli lokalt. */
 export function aiLageStandard(): AiLage {
   const v = process.env.KUNDSTART_AI as AiLage | undefined;
   if (v === 'gateway' || v === 'claude-cli' || v === 'regelstyrd') return v;
-  return process.env.VERCEL ? 'gateway' : 'regelstyrd';
+  return 'regelstyrd';
+}
+
+/** Gateway anropas bara när servern uttryckligen startats med KUNDSTART_AI=gateway, också för äldre ärenden som
+ *  skapades med gateway som läge. */
+export function gatewayPa(): boolean {
+  return process.env.KUNDSTART_AI === 'gateway';
+}
+
+/** Det läge ett ärende faktiskt får i den här miljön: ett läge som miljön inte tillåter blir standardlistan. */
+export function effektivtLage(lage: AiLage): AiLage {
+  if (lage === 'gateway' && gatewayPa()) return 'gateway';
+  if (lage === 'claude-cli' && provTillatet()) return 'claude-cli';
+  return 'regelstyrd';
 }
 
 export function standardModell(): string {
@@ -695,7 +711,7 @@ function tillampaRegelstyrd(a: Arende, inledning?: string): string | null {
 
 interface Anropsutfall { svar: ModellSvar | null; fel?: ModellFel; forsok: number; tokens_in: number; tokens_out: number; kand_usd: number; okand_usd: number; ms: number; diagnostik: Record<string, unknown>[]; budgetStopp?: string }
 
-async function korAgent(a: Arende, lage: AiLage, modell: string, system: string, anvandare: string): Promise<Anropsutfall> {
+async function korAgent(a: Arende, lage: AiLage, modell: string, system: string, anvandare: string, prov: ProvVal | null): Promise<Anropsutfall> {
   const start = Date.now();
   const ut: Anropsutfall = { svar: null, forsok: 0, tokens_in: 0, tokens_out: 0, kand_usd: 0, okand_usd: 0, ms: 0, diagnostik: [] };
   let maxTokens = AGENT_MAX_TOKENS;
@@ -714,7 +730,7 @@ async function korAgent(a: Arende, lage: AiLage, modell: string, system: string,
     try {
       const svar = lage === 'gateway'
         ? await viaGateway({ modell, system, anvandare, schemaNamn: 'kundstart_agent', schema: AGENT_SCHEMA, maxTokens, timeoutMs: Math.min(40_000, TUR_MS - (Date.now() - start)) })
-        : await viaClaudeCli({ modell: process.env.KUNDSTART_CLI_MODELL || 'claude-opus-5', system, anvandare, schemaNamn: 'kundstart_agent', schema: AGENT_SCHEMA, maxTokens, timeoutMs: 170_000 });
+        : await viaClaudeCli({ modell, system, anvandare, schemaNamn: 'kundstart_agent', schema: AGENT_SCHEMA, maxTokens, timeoutMs: turTimeoutMs(prov?.anstrangning || 'low'), anstrangning: prov?.anstrangning });
       const kostnad = svar.kostnad_usd ?? (lage === 'gateway' ? kostnadUrToken(modell, svar.tokens_in, svar.tokens_out) : null);
       if (res) await avrakna(res.id, kostnad, res.usd);
       ut.tokens_in += svar.tokens_in; ut.tokens_out += svar.tokens_out;
@@ -766,7 +782,7 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
     return vila(r.data);
   }
 
-  let lage: AiLage = forsta.ai.lage;
+  let lage: AiLage = effektivtLage(forsta.ai.lage);
   let skal: string | undefined;
   if (lage !== 'regelstyrd' && forsta.ai.anrop >= MAX_AI_ANROP) { lage = 'regelstyrd'; skal = 'ärendets gräns för antal AI-svar är nådd'; }
   if (lage !== 'regelstyrd' && forsta.ai.paus_till && new Date(forsta.ai.paus_till).getTime() > Date.now()) { lage = 'regelstyrd'; skal = 'AI-stödet är pausat efter upprepade fel'; }
@@ -779,7 +795,7 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
     if (a.fragor.some((f) => f.status === 'stalld') || (a.samtal_klar && !opts.fortsatt)) { upptaget = true; return null; }
     const p = a.ai.pagaende;
     if (p && Date.parse(p.till) > Date.now()) { upptaget = true; return null; }
-    a.ai.pagaende = { id: lasId, till: new Date(Date.now() + LAS_MS).toISOString() };
+    a.ai.pagaende = { id: lasId, till: new Date(Date.now() + (lage === 'claude-cli' ? turTimeoutMs(lasProv().anstrangning) + 15_000 : LAS_MS)).toISOString() };
     if (opts.fortsatt && a.samtal_klar) { bump(a); a.samtal_klar = null; handelse(a, 'samtal_fortsatt', {}); }
     return a;
   });
@@ -788,7 +804,8 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
   try {
     forsta = las.data;
     const basRevision = forsta.revision;
-    const modell = lage === 'claude-cli' ? (process.env.KUNDSTART_CLI_MODELL || 'claude-opus-5') : forsta.ai.modell && lage === 'gateway' ? forsta.ai.modell : standardModell();
+    const prov = lage === 'claude-cli' ? lasProv() : null;
+    const modell = prov ? prov.modell : forsta.ai.modell && lage === 'gateway' ? forsta.ai.modell : standardModell();
 
     let utfall: Anropsutfall | null = null;
     let ut: AgentUtdata | null = null;
@@ -801,7 +818,7 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
         utlosta: forsta.foljdregler_utlosta.map((u) => `${u.regel} (${u.fraga_id}: "${u.traff}")`),
         aterstarAnrop: Math.max(0, Math.floor((granser().arende_usd - (forsta.ai.kostnad_usd || 0) - (forsta.ai.okand_kostnad_usd || 0)) / 0.01)),
       });
-      utfall = await korAgent(forsta, lage, modell, systemText(), kontext.text);
+      utfall = await korAgent(forsta, lage, modell, systemText(), kontext.text, prov);
       korning = utfall;
       if (utfall.svar) {
         ut = validera(utfall.svar.rå, kontext);
@@ -854,7 +871,7 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
       } else {
         fragaId = tillampaRegelstyrd(a);
       }
-      handelse(a, 'nasta', { lage: ut ? lage : 'regelstyrd', fallback, skal: skal || utfall?.budgetStopp, felklass, fraga: fragaId, klar: Boolean(a.samtal_klar), ms: utfall?.ms, forsok: utfall?.forsok, tokens_in: utfall?.tokens_in, tokens_out: utfall?.tokens_out, kostnad_usd: utfall?.kand_usd, okand_usd: utfall?.okand_usd, tillampat, avvisade: avvisade.length ? avvisade : undefined, valideringsfel });
+      handelse(a, 'nasta', { lage: ut ? lage : 'regelstyrd', ...(prov && ut ? { modell, anstrangning: prov.anstrangning } : {}), fallback, skal: skal || utfall?.budgetStopp, felklass, fraga: fragaId, klar: Boolean(a.samtal_klar), ms: utfall?.ms, forsok: utfall?.forsok, tokens_in: utfall?.tokens_in, tokens_out: utfall?.tokens_out, kostnad_usd: utfall?.kand_usd, okand_usd: utfall?.okand_usd, tillampat, avvisade: avvisade.length ? avvisade : undefined, valideringsfel });
       return a;
     });
     const a = await efterkontrolleraDoman(r.data).catch(() => r.data);

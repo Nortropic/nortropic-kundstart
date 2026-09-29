@@ -37,6 +37,8 @@ Digitala (kundmappen, INTERVJU.json)  ◀── verktyg/kundstart.py hamta ─�
   citerar kundens ord ordagrant ur ett namngivet svar eller material, och avvisar resten synligt i händelseloggen. Ett
   tillval blir kundens val bara när kundens eget citat bär det; utan citat kan det bara bli en rekommendation. En modellrespons som kommer efter en nyare ändring
   (svar, rättelse, tillvalsval) kasseras; kundens senaste ord vinner. Ingen HTML eller kod från modellen körs hos kunden.
+  Sedan 2026-09-29 (ägarens besked: bara prov nu, ingen kostnads-AI) körs agenten bara i det lokala testläget på ägarens
+  dator, med Claude Code på ägarens inloggning som förbättringspartnern. Produktionen ställer standardlistans frågor.
 - **Tillval** (`lib/tillval.ts`): domän, formulär/bilagor, e-postmottagning, bokning, betalning/deposition, CRM,
   nyhetsbrev, CMS, Search Console, Google-företagsprofil, Google Ads, Meta-annonser och analys, plus kundens egna behov.
   Kundens val (vill ha / har redan ett system / hjälp att välja / inte nu), Digitalas rekommendation och Digitalas
@@ -45,9 +47,9 @@ Digitala (kundmappen, INTERVJU.json)  ◀── verktyg/kundstart.py hamta ─�
 - **Domänflödet** (`lib/doman.ts`): kunden anger en befintlig domän eller ett önskemål; servern läser offentliga
   DNS-uppgifter (DoH) och registerdata (RDAP via IANA:s bootstrap), följer aldrig omdirigeringar och vägrar interna namn.
   Ingenting ändras hos kundens leverantör.
-- **Kostnadsspärr** (`lib/budget.ts`): varje modellanrop reserverar sin högsta möjliga kostnad mot ärendets, dygnets och
-  månadens tak i en villkorad Blob-skrivning innan anropet görs, och avräknas mot gatewayns faktiska kostnad efteråt.
-  Når ett tak tar den regelstyrda vägen över och kunden ser det.
+- **Kostnadsspärr** (`lib/budget.ts`, gäller gateway-vägen, avstängd sedan 2026-09-29): varje modellanrop reserverar sin
+  högsta möjliga kostnad mot ärendets, dygnets och månadens tak i en villkorad Blob-skrivning innan anropet görs, och
+  avräknas mot gatewayns faktiska kostnad efteråt. Når ett tak tar den regelstyrda vägen över och kunden ser det.
 - **Lagring** (`lib/lagring.ts`): privata JSON-dokument och filer i Vercel Blob (region Stockholm), villkorad skrivning
   med ETag och omförsök; idempotensnycklar och innehållsregler (samma text på samma fråga, samma fil enligt sha256)
   gör omladdning, dubbelklick, två flikar och återförsök ofarliga.
@@ -72,14 +74,23 @@ npm run build && KUNDSTART_AI=regelstyrd npx next start -H 127.0.0.1 -p 3111
 npm run test:e2e                  # Playwright mot 127.0.0.1:3111 (startar servern själv om ingen kör)
 ```
 
-`KUNDSTART_AI` = `gateway` (Vercel AI Gateway, driftläget), `regelstyrd` (ingen modell; frågorna följer bankens ordning)
-eller `claude-cli` (lokalt testläge: agenten körs genom `claude -p` på byggmaskinens Claude Code-inloggning, isolerat från
-minne, CLAUDE.md, MCP och verktyg; standardmodell `claude-opus-5` med `--effort low`; vägrar på Vercel och är inte en
-kommersiell väg).
+`KUNDSTART_AI` = ej satt eller `regelstyrd` (ingen modell; frågorna följer bankens ordning; standard överallt sedan
+2026-09-29), `gateway` (Vercel AI Gateway; avstängt tills det uttryckligen slås på) eller `claude-cli` (lokalt testläge:
+agenten körs genom `claude -p` på ägarens Claude Code-inloggning, isolerat från minne, CLAUDE.md, MCP och verktyg, med
+den modell och ansträngning som väljs i skrivrutan; vägrar på Vercel och är bara för ägarens egna prov).
+
+Testläget körs som förbättringspartnern:
+
+```sh
+npm run prov -- start     # 127.0.0.1:3131, bygger om vid behov
+npm run prov -- oppna     # öppnar ägarens provärende (--ny skapar ett nytt)
+npm run prov -- status
+npm run prov -- stopp
+```
 
 ```sh
 npm run test:core                 # agent, kostnadsspärr, domän, tillval, CAS (utan nätverk utom märkta prov)
-KUNDSTART_AI=claude-cli npx playwright test tests/ai.spec.ts   # verklig modelltur lokalt (servern startas i samma läge)
+KUNDSTART_AI=claude-cli npx playwright test tests/ai.spec.ts tests/provlage.spec.ts   # verklig modelltur och modellvalet lokalt
 ```
 
 ## Överlämning och åtgärdskontrakt

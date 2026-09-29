@@ -1,7 +1,11 @@
 # Drift — Kundstart
 
 Läst mot Vercels dokumentation 2026-09-27 (AI Gateway pricing/authentication/OIDC, Vercel Blob, Functions limits).
-Uppdaterad 2026-09-28 för intervjuagenten, tillvalen, domänflödet och kostnadsspärren.
+Uppdaterad 2026-09-28 för intervjuagenten, tillvalen, domänflödet och kostnadsspärren, och 2026-09-29 för ägarens besked:
+bara prov nu, ingen kostnads-AI. Produktionen ställer standardlistans frågor utan modell, och AI-samtalet provas i det
+lokala testläget på ägarens dator (Claude Code på ägarens inloggning, som förbättringspartnern). Gateway-vägen och
+kostnadsspärren finns kvar i koden men är avstängda; de är den väg Anthropics villkor tillåter för riktiga kunder
+(en Pro- eller Max-inloggning får inte svara någon annans användare).
 
 ## Var tjänsten kör
 
@@ -9,9 +13,10 @@ Uppdaterad 2026-09-28 för intervjuagenten, tillvalen, domänflödet och kostnad
 |---|---|---|
 | Webb och API | Vercel, team `nortropic` (Pro), projekt `nortropic-kundstart`, funktioner i `arn1` (Stockholm) | `vercel.json` sätter regionen; Fluid compute, standardkostnad inom Pro-krediten |
 | Dokument och filer | Vercel Blob, lagret `nortropic-kundstart` (privat, region `arn1`) | OIDC på Vercel, `BLOB_READ_WRITE_TOKEN` lokalt; storlek och operationer räknas mot Pro-krediten |
-| Modell | Vercel AI Gateway (`https://ai-gateway.vercel.sh`), OIDC-token från deploymenten, ingen API-nyckel | fri nivå: `openai/gpt-5-mini` (standard), `openai/gpt-4.1-mini`; Claude-modeller kräver köpta AI Gateway-krediter (403 `RestrictedModelsError` på fri nivå, uppmätt 2026-09-27 14:42Z) |
+| Modell i produktionen | ingen sedan 2026-09-29: standardlistan ställer frågorna | Vercel AI Gateway (`https://ai-gateway.vercel.sh`, OIDC, ingen API-nyckel) slås på bara med `KUNDSTART_AI=gateway`; fri nivå: `openai/gpt-5-mini`, `openai/gpt-4.1-mini`; Claude-modeller kräver köpta krediter (403 på fri nivå, uppmätt 2026-09-27) |
+| Modell i testläget | ägarens Mac: `claude -p` på ägarens Claude Code-inloggning | `npm run prov -- start`; modell och ansträngning väljs i skrivrutan; bara ägarens egna prov |
 | Domänkontroll | `cloudflare-dns.com` (DoH), `data.iana.org` (RDAP-bootstrap) och registrets RDAP-server | bara läsning av offentliga uppgifter, fasta värdar, ingen omdirigering; högst 10 kontroller per ärende och timme |
-| Byggsession | ägarens Mac | inget av ovanstående beror på den; kunden kan svara när Macen sover. Undantag: testläget `claude-cli` kör bara lokalt |
+| Byggsession och testläge | ägarens Mac | produktionen beror inte på den; testläget (127.0.0.1:3131) kör bara när ägaren startat det |
 
 ## Miljövariabler
 
@@ -19,12 +24,12 @@ Uppdaterad 2026-09-28 för intervjuagenten, tillvalen, domänflödet och kostnad
 |---|---|---|
 | `KUNDSTART_HEMLIGHET` | Vercel (prod/preview sensitive, dev), 0600-kopia i `~/.nortropic-hemligheter/kundstart/` | signerar sessionskakan |
 | `KUNDSTART_INTERN_NYCKEL` | samma | Bearer för `/api/intern/*` (Digitalas `verktyg/kundstart.py`) |
-| `KUNDSTART_AI` | Vercel | `gateway` (standard på Vercel) · `regelstyrd` · `claude-cli` (bara lokalt testläge) |
+| `KUNDSTART_AI` | Vercel / lokalt | ej satt = `regelstyrd` överallt (standard sedan 2026-09-29) · `gateway` (slår på AI Gateway, även för äldre gateway-ärenden) · `claude-cli` (bara lokalt testläge; `npm run prov` sätter det) |
 | `KUNDSTART_AI_MODELL` | Vercel | standard `openai/gpt-5-mini`; `anthropic/claude-haiku-4.5` när krediter finns |
 | `KUNDSTART_AI_MAX_ANROP` | Vercel | AI-anrop per ärende (standard 60) |
 | `KUNDSTART_AI_BUDGET_ARENDE_USD` / `_DYGN_USD` / `_MANAD_USD` | Vercel | kostnadstak per ärende / dygn (UTC) / kalendermånad, standard 0,40 / 1,00 / 3,50 USD |
 | `KUNDSTART_AI_RESONEMANG` | Vercel | resonemangsnivå för gatewaymodellen, standard `low` (mätt: `minimal` registrerade 4–6 av 8 kundbesked om tillval rätt, `low` 8 av 8) |
-| `KUNDSTART_CLI_MODELL`, `KUNDSTART_CLI_EFFORT` | bara lokalt | testlägets modell (standard `claude-opus-5`) och effort (standard `low`) |
+| `KUNDSTART_PROV_DATA` | bara lokalt | testlägets katalog (standard `~/.nortropic-kundstart-prov`, 0700): `installningar.json` med modell och ansträngning (standard Opus 5.5, `low`), logg, pid |
 | `AI_GATEWAY_API_KEY` | valfri | ersätter OIDC (t.ex. kör utanför Vercel) |
 | `BLOB_READ_WRITE_TOKEN`, `VERCEL_OIDC_TOKEN`, `BLOB_STORE_ID` | av Vercel | lagrets åtkomst |
 
@@ -68,8 +73,9 @@ Uppdaterad 2026-09-28 för intervjuagenten, tillvalen, domänflödet och kostnad
   (`ai.kostnad_usd`) och i månadens reskontra (`GET /api/intern/budget`). Fri nivå: månadens fria kredit (saldo
   4,76 USD 2026-09-28 17:07Z); inga köpta krediter (köp = ägarbeslut). Uppmätt kostnad per agenttur finns i
   uppdragets evidens och ska läsas därifrån, inte uppskattas här.
-- AI (lokalt testläge `claude-cli`): körs på byggmaskinens Claude Code-abonnemang och räknas mot dess kvot, inte i USD.
+- AI (lokalt testläge `claude-cli`): körs på ägarens Claude Code-abonnemang och räknas mot dess kvot, inte i USD.
   `claude -p` rapporterar ett listprisvärde (`listpris_usd_ej_kostnad` i händelsen); det är ingen faktisk kostnad.
+  Kostnadsspärren gäller inte testläget; gränsen på AI-svar per ärende (`KUNDSTART_AI_MAX_ANROP`) gäller.
 - Blob: några kB per ärende plus material; operationer i tiotal per ärende; inom Pro-kreditens ram vid rimlig volym.
 - Funktioner: aktiv CPU-tid i millisekunder per anrop; inom Pro-kreditens ram. En agenttur väntar på modellen
   (Fluid compute räknar aktiv CPU, inte väntetid).
@@ -82,7 +88,25 @@ Uppdaterad 2026-09-28 för intervjuagenten, tillvalen, domänflödet och kostnad
 | reserv efter fel | regelstyrd för den frågan | "AI-stöd: reservläge efter ett fel. …" eller efter tre fel "AI-stöd: pausat efter upprepade fel. …", även efter omladdning |
 | kostnadstak nått | regelstyrd | "AI-stöd: pausat (ärendets budget för AI-stödet är förbrukad)" / "(dagens …)" / "(månadens …)" |
 | `regelstyrd` | följdfrågor först, sedan luckor i prioritetsordning | "AI-stöd: av. Frågorna följer vår standardlista." |
-| `claude-cli` (lokalt) | som `gateway`, med Claude Opus 5 genom `claude -p` | "AI-stöd: på (lokalt testläge med Claude). …"; vägrar på Vercel |
+| `claude-cli` (lokalt testläge) | som `gateway`, med den Claude-modell och ansträngning ägaren valt i skrivrutan, genom `claude -p` | "AI-stöd: på, lokalt testläge med Claude (Opus 5.5 · low). …"; modellvalet i skrivrutan; vägrar på Vercel |
+| ärendets läge tillåts inte i miljön | regelstyrd, utan felmeddelande (t.ex. ett äldre gateway-ärende i produktionen efter 2026-09-29) | "AI-stöd: av. Frågorna följer vår standardlista." |
+
+## Lokalt testläge (som förbättringspartnern)
+
+Kör från primärutcheckningen på main och starta om efter varje sammanfogning:
+
+```sh
+npm run prov -- start     # bygger om vid behov, kör next start på 127.0.0.1:3131 med KUNDSTART_AI=claude-cli
+npm run prov -- oppna     # öppnar ägarens provärende (länken sparas 0600 i ~/.nortropic-hemligheter/kundstart/); --ny skapar ett nytt
+npm run prov -- status    # kör den, vilken kod, vilket modellval
+npm run prov -- stopp
+```
+
+I skrivrutan väljs modell (Opus 5.5, Fable 5.1, Sonnet 5, Opus 5, Haiku 4.5) och ansträngning (low–max), som i
+förbättringspartnern; `/model sonnet` och `/effort high` i rutan byter direkt och skickas aldrig som svar. Valet gäller
+från nästa fråga och sparas i `installningar.json` (0600). Ett ärende som skapats i testläget har läget `claude-cli`;
+öppnas det på en server utan testläget får det standardlistan. Testläget är bara för ägarens egna prov: Anthropics
+villkor för Claude Code tillåter inte att en Pro- eller Max-inloggning svarar någon annans användare.
 
 ## Återställning och radering
 

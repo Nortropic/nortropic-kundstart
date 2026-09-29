@@ -17,6 +17,8 @@ const blob = {
 };
 const originalLoad = Module._load; Module._load = function (id, ...args) { return id === '@vercel/blob' ? blob : originalLoad.call(this, id, ...args); };
 process.env.AI_GATEWAY_API_KEY = 'provnyckel-ingen-leverantor';
+// Proven prövar gateway-vägen, som bara anropas när servern uttryckligen startats med KUNDSTART_AI=gateway.
+process.env.KUNDSTART_AI = 'gateway';
 const A = require('../../lib/arende.ts'), AG = require('../../lib/agent.ts'), MO = require('../../lib/modell.ts'), B = require('../../lib/budget.ts'), D = require('../../lib/doman.ts'), T = require('../../lib/tackning.ts'), V = require('../../lib/vy.ts');
 const tests = []; const test = (name, fn) => tests.push({ name, fn });
 const vanta = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -467,6 +469,95 @@ test('Ärende lagrat av den driftsatta versionen (133f37f) går att visa, export
   a = await A.oppnaIgen(id, 'BEH3_1');
   assert(a.fragor.some((f) => f.id === 'BEH3_1' && f.status === 'stalld'));
   assert.equal(V.tillVy(a).overforing, 'andrat_efter');
+});
+
+test('Utan uttryckligt KUNDSTART_AI anropas ingen gateway, inte heller för ett äldre gateway-ärende eller på Vercel', async () => {
+  const a0 = await medSvar('gateway');
+  const anrop = gateway(agentUt());
+  delete process.env.KUNDSTART_AI;
+  try {
+    const r = await A.nasta(a0.id);
+    assert.equal(anrop.filter((x) => x.url.includes('ai-gateway')).length, 0, 'inget gateway-anrop');
+    assert.equal(r.ai.lage, 'regelstyrd'); assert.equal(r.fragor.length, 1, 'standardlistan ställer nästa fråga');
+    assert.equal(V.tillVy(r.a).ai.status, 'av'); assert.match(V.tillVy(r.a).ai.beskrivning, /AI-stöd: av/);
+    assert.equal(A.effektivtLage('okant'), 'regelstyrd', 'ett okänt lagrat läge blir standardlistan');
+    process.env.VERCEL = '1';
+    assert.equal(A.aiLageStandard(), 'regelstyrd', 'nya ärenden på Vercel får standardlistan');
+  } finally {
+    process.env.KUNDSTART_AI = 'gateway'; delete process.env.VERCEL;
+  }
+});
+
+test('Testlägets val: listorna, privat fil, oläsbar fil skrivs aldrig över, bara lokalt med claude-cli', async () => {
+  const P = require('../../lib/provlage.ts');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'kundstart-prov-'));
+  const fore = process.env.KUNDSTART_PROV_DATA;
+  process.env.KUNDSTART_PROV_DATA = path.join(dir, 'data');
+  const fil = path.join(dir, 'data', 'installningar.json');
+  try {
+    assert.deepEqual(P.lasProv(), { modell: 'claude-opus-5-5', anstrangning: 'low' }, 'standardvalet utan fil');
+    assert.deepEqual(P.sparaProv('claude-sonnet-5', 'high'), { modell: 'claude-sonnet-5', anstrangning: 'high' });
+    assert.equal(fs.statSync(fil).mode & 0o777, 0o600); assert.equal(fs.statSync(path.join(dir, 'data')).mode & 0o777, 0o700);
+    assert.throws(() => P.sparaProv('openai/gpt-5-mini', 'high'), /okänd modell/);
+    assert.throws(() => P.sparaProv('claude-sonnet-5', 'turbo'), /okänd ansträngning/);
+    fs.writeFileSync(fil, JSON.stringify({ modell: 'claude-haiku-4-5-20251001', anstrangning: 'max', egen: 'behålls' }));
+    P.sparaProv('claude-opus-5', 'medium');
+    assert.equal(JSON.parse(fs.readFileSync(fil, 'utf8')).egen, 'behålls', 'övriga nycklar lämnas orörda');
+    fs.writeFileSync(fil, '{trasig');
+    assert.throws(() => P.sparaProv('claude-opus-5', 'low'), /går inte att läsa/);
+    assert.equal(fs.readFileSync(fil, 'utf8'), '{trasig', 'en oläsbar fil skrivs aldrig över');
+    assert.deepEqual(P.lasProv(), { modell: 'claude-opus-5-5', anstrangning: 'low' }, 'oläsbar fil ger standardvalet');
+    assert.equal(P.turTimeoutMs('low'), 170000); assert.equal(P.turTimeoutMs('max'), 300000);
+    fs.rmSync(fil);
+    process.env.KUNDSTART_AI = 'claude-cli';
+    assert.equal(P.provTillatet(), true);
+    assert.equal(A.effektivtLage('claude-cli'), 'claude-cli'); assert.equal(A.effektivtLage('gateway'), 'regelstyrd');
+    P.sparaProv('claude-sonnet-5', 'medium');
+    const vy = V.tillVy(await arende('claude-cli'));
+    assert.equal(vy.ai.prov.namn, 'Sonnet 5'); assert.equal(vy.ai.prov.anstrangning, 'medium');
+    assert.match(vy.ai.beskrivning, /lokalt testläge med Claude \(Sonnet 5 · medium\)/);
+    process.env.VERCEL = '1';
+    assert.equal(P.provTillatet(), false, 'aldrig på Vercel'); assert.equal(A.effektivtLage('claude-cli'), 'regelstyrd');
+    assert.equal(V.tillVy(await arende('claude-cli')).ai.prov, undefined, 'ingen modellväljare utanför testläget');
+  } finally {
+    process.env.KUNDSTART_AI = 'gateway'; delete process.env.VERCEL;
+    if (fore === undefined) delete process.env.KUNDSTART_PROV_DATA; else process.env.KUNDSTART_PROV_DATA = fore;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('claude -p i testläget: bara modell och ansträngning ur listorna som flaggor, inga nycklar i barnprocessens miljö', async () => {
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'kundstart-cli-'));
+  const ut = path.join(dir, 'ut');
+  // Ett låtsat claude-kommando först i PATH: skriver ned argument och miljö och svarar som claude -p --output-format json.
+  fs.writeFileSync(path.join(dir, 'claude'), '#!/bin/sh\nfor a in "$@"; do printf \'%s\\n\' "$a"; done > "$PROV_UT.args"\nenv > "$PROV_UT.env"\ncat > /dev/null\nprintf \'{"structured_output":{"ok":true},"usage":{"input_tokens":3,"output_tokens":2},"total_cost_usd":0.01}\'\n', { mode: 0o755 });
+  const nycklar = { ANTHROPIC_API_KEY: 'provnyckel-anthropic', BLOB_READ_WRITE_TOKEN: 'provnyckel-blob', VERCEL_OIDC_TOKEN: 'provnyckel-oidc' };
+  const fore = { PATH: process.env.PATH, ...Object.fromEntries(Object.keys(nycklar).map((k) => [k, process.env[k]])) };
+  process.env.PATH = dir + ':' + process.env.PATH; process.env.PROV_UT = ut; Object.assign(process.env, nycklar);
+  const begaran = { modell: 'claude-sonnet-5', system: 'Systemprompt på en rad.', anvandare: 'hej', schemaNamn: 's', schema: { type: 'object' }, maxTokens: 100, timeoutMs: 5000 };
+  try {
+    const r = await MO.viaClaudeCli({ ...begaran, anstrangning: 'turbo --dangerously-skip-permissions' });
+    assert.deepEqual(r.rå, { ok: true }); assert.equal(r.kostnad_usd, null, 'kvot, inte kostnad');
+    const args = fs.readFileSync(ut + '.args', 'utf8').split('\n');
+    assert.equal(args[args.indexOf('--effort') + 1], 'low', 'okänd ansträngning blir low');
+    assert.equal(args[args.indexOf('--model') + 1], 'claude-sonnet-5');
+    assert(!args.some((x) => x.includes('dangerously')), 'inga egna flaggor når claude');
+    const env = fs.readFileSync(ut + '.env', 'utf8');
+    assert.match(env, /^PROV_UT=/m, 'miljön skrevs ned');
+    for (const namn of ['ANTHROPIC_API_KEY', 'AI_GATEWAY_API_KEY', 'KUNDSTART_AI', 'BLOB_READ_WRITE_TOKEN', 'VERCEL_OIDC_TOKEN']) {
+      assert(process.env[namn], namn + ' är satt i provet'); assert(!new RegExp('^' + namn + '=', 'm').test(env), namn + ' ärvs inte');
+    }
+    assert.match(env, /^CLAUDE_CODE_DISABLE_AUTO_MEMORY=1$/m);
+    await MO.viaClaudeCli({ ...begaran, modell: 'openai/gpt-5-mini', anstrangning: 'max' });
+    const args2 = fs.readFileSync(ut + '.args', 'utf8').split('\n');
+    assert.equal(args2.indexOf('--model'), -1, 'en gateway-modell skickas aldrig till claude'); assert.equal(args2[args2.indexOf('--effort') + 1], 'max');
+  } finally {
+    delete process.env.PROV_UT;
+    for (const [k, v] of Object.entries(fore)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 (async () => {

@@ -1,7 +1,10 @@
-// Modelltransport för kundsamtalet: Vercel AI Gateway (OIDC på Vercel eller AI_GATEWAY_API_KEY), ett strukturerat
-// svar per anrop mot ett strikt JSON-schema, faktisk kostnad ur gatewayens usage.cost. Lokalt kan claude -p användas
-// för verifiering i byggmiljön (aldrig på Vercel). Råa provider- eller modelltexter loggas aldrig: de kan innehålla
-// kundtext eller åtkomstuppgifter.
+// Modelltransport för kundsamtalet. Två vägar, var och en påslagen bara uttryckligen (se aiLageStandard i arende.ts):
+// - Vercel AI Gateway (KUNDSTART_AI=gateway; OIDC på Vercel eller AI_GATEWAY_API_KEY): ett strukturerat svar per anrop
+//   mot ett strikt JSON-schema, faktisk kostnad ur gatewayens usage.cost. Den väg villkoren tillåter för riktiga kunder.
+//   Avstängd sedan 2026-09-29 (ägarens besked: bara prov nu, ingen kostnads-AI).
+// - claude -p på ägarens Claude Code-inloggning (KUNDSTART_AI=claude-cli): lokalt testläge som förbättringspartnern,
+//   aldrig på Vercel och aldrig för kunder.
+// Råa provider- eller modelltexter loggas aldrig: de kan innehålla kundtext eller åtkomstuppgifter.
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 
@@ -68,6 +71,8 @@ export interface Begaran {
   schema: object;
   maxTokens: number;
   timeoutMs: number;
+  /** Bara claude -p: ansträngning (low, medium, high, xhigh, max) ur testlägets val. */
+  anstrangning?: string;
 }
 
 export async function viaGateway(b: Begaran): Promise<ModellSvar> {
@@ -107,7 +112,7 @@ export async function viaGateway(b: Begaran): Promise<ModellSvar> {
 
 /**
  * Lokalt testläge (bara ägarens egna prov på den egna datorn, aldrig på Vercel och aldrig för kunder): varje tur
- * körs med claude -p på ägarens Claude Code-inloggning. Isolerat: egen systemprompt, inga verktyg, inga MCP-servrar,
+ * körs med claude -p på ägarens Claude Code-inloggning, med den modell och ansträngning ägaren valt i skrivrutan. Isolerat: egen systemprompt, inga verktyg, inga MCP-servrar,
  * inget automatiskt minne, inga CLAUDE.md-filer och inga sparade sessioner. Inloggningens e-postadress följer ändå med
  * i modellens sammanhang (går inte att stänga av med OAuth) och redovisas som känd begränsning. Förbrukningen räknas i
  * abonnemangets kvot, inte i USD; claude -p:s total_cost_usd är ett listprisvärde och bokförs bara som diagnos.
@@ -116,15 +121,14 @@ export async function viaClaudeCli(b: Begaran): Promise<ModellSvar> {
   if (process.env.VERCEL) throw new ModellFel('atkomst', false, { skal: 'claude-cli är bara för lokala prov' });
   const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV };
   for (const [k, v] of Object.entries(process.env)) {
-    if (v === undefined || k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_') || k === 'ANTHROPIC_API_KEY' || k.startsWith('KUNDSTART_') || k.startsWith('BLOB_') || k.startsWith('VERCEL')) continue;
+    if (v === undefined || k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_') || k === 'ANTHROPIC_API_KEY' || k === 'AI_GATEWAY_API_KEY' || k.startsWith('KUNDSTART_') || k.startsWith('BLOB_') || k.startsWith('VERCEL')) continue;
     env[k] = v;
   }
   env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
   env.CLAUDE_CODE_DISABLE_CLAUDE_MDS = '1';
   const args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(b.schema), '--system-prompt', b.system, '--setting-sources', 'user', '--tools', '', '--max-turns', '1', '--mcp-config', '{"mcpServers":{}}', '--strict-mcp-config', '--no-session-persistence'];
   if (b.modell && !b.modell.includes('/')) args.push('--model', b.modell);
-  // Ett samtal behöver korta svarstider: låg resonemangsnivå som standard (KUNDSTART_CLI_EFFORT kan höja).
-  args.push('--effort', ['low', 'medium', 'high'].includes(process.env.KUNDSTART_CLI_EFFORT || '') ? process.env.KUNDSTART_CLI_EFFORT! : 'low');
+  args.push('--effort', ['low', 'medium', 'high', 'xhigh', 'max'].includes(b.anstrangning || '') ? b.anstrangning! : 'low');
   const start = Date.now();
   return await new Promise((resolve, reject) => {
     const p = spawn('claude', args, { env, cwd: tmpdir(), stdio: 'pipe' });
@@ -132,7 +136,7 @@ export async function viaClaudeCli(b: Begaran): Promise<ModellSvar> {
     const t = setTimeout(() => {
       p.kill('SIGTERM');
       reject(new ModellFel('transport', false, { avbrutet: true }));
-    }, Math.min(b.timeoutMs, 170_000));
+    }, Math.min(b.timeoutMs, 300_000));
     p.stdout.on('data', (d: Buffer) => (ut += d.toString()));
     p.on('error', () => {
       clearTimeout(t);
@@ -145,7 +149,7 @@ export async function viaClaudeCli(b: Begaran): Promise<ModellSvar> {
         const d = JSON.parse(ut) as { structured_output?: unknown; result?: string; is_error?: boolean; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }; total_cost_usd?: number };
         if (d.is_error || d.structured_output === undefined) return reject(new ModellFel('format', true, { lage: 'claude-cli' }));
         const u = d.usage || {};
-        resolve({ rå: d.structured_output, tokens_in: (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0), tokens_out: u.output_tokens || 0, kostnad_usd: null, diagnos: { lage: 'claude-cli', modell: b.modell, listpris_usd_ej_kostnad: d.total_cost_usd ?? null, ms: Date.now() - start } });
+        resolve({ rå: d.structured_output, tokens_in: (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0), tokens_out: u.output_tokens || 0, kostnad_usd: null, diagnos: { lage: 'claude-cli', modell: b.modell, anstrangning: b.anstrangning || 'low', listpris_usd_ej_kostnad: d.total_cost_usd ?? null, ms: Date.now() - start } });
       } catch {
         reject(new ModellFel('format', false));
       }

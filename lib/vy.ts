@@ -1,6 +1,7 @@
 // Vyn som kundens webbläsare får: inga lagringssökvägar, inga idempotensnycklar, ingen händelselogg, ingen kostnad.
 // Samtalet och "Ditt uppdrag" är två vyer av samma ärende och byggs här ur samma dokument.
-import { aterstar, bild, type BildRad } from './arende';
+import { aterstar, bild, effektivtLage, type BildRad } from './arende';
+import { provVy, type ProvVy } from './provlage';
 import { BANK } from './bank';
 import { kontrollText } from './doman';
 import { tackning, behovMedStatus } from './tackning';
@@ -59,7 +60,7 @@ export interface UppdragVy {
 
 export interface Vy {
   arende: { id: string; kund: { namn: string }; testdialog: boolean; revision: number; kanal: string; inlamnad: { tid: string; svar: number; material: number } | null; uppdaterad: string };
-  ai: { lage: string; modell?: string; anrop: number; status: string; beskrivning: string };
+  ai: { lage: string; modell?: string; anrop: number; status: string; beskrivning: string; prov?: ProvVy };
   tackning: ReturnType<typeof tackning>;
   behov: { id: string; nyckel: string; citat: string; status: string; kan_oppnas: boolean }[];
   overlamning: string;
@@ -117,11 +118,14 @@ export function tillVy(a: Arende): Vy {
   const oppna = a.fragor.filter((f) => f.status === 'stalld').map(fragaVy);
   const kvar = aterstar(a);
   const pausad = Boolean(a.ai.paus_till && Date.parse(a.ai.paus_till) > Date.now());
-  const aiStatus = a.ai.lage === 'regelstyrd' ? 'av' : pausad ? 'pausad' : a.ai.aktuell || (a.ai.senaste_fel && !a.ai.senaste_lyckade ? 'reserv' : 'aktiv');
+  // Läget som faktiskt gäller i den här miljön: ett äldre gateway-ärende är av när gateway inte är påslagen.
+  const lageNu = effektivtLage(a.ai.lage);
+  const prov = lageNu === 'claude-cli' ? provVy() : undefined;
+  const aiStatus = lageNu === 'regelstyrd' ? 'av' : pausad ? 'pausad' : a.ai.aktuell || (a.ai.senaste_fel && !a.ai.senaste_lyckade ? 'reserv' : 'aktiv');
   const aiBeskrivning = aiStatus === 'av' ? 'AI-stöd: av. Frågorna följer vår standardlista.'
     : aiStatus === 'pausad' ? (a.ai.budget_skal ? `AI-stöd: pausat (${a.ai.budget_skal}). Era svar sparas; frågorna följer vår standardlista.` : 'AI-stöd: pausat efter upprepade fel. Era svar sparas; frågorna följer vår standardlista.')
       : aiStatus === 'reserv' ? 'AI-stöd: reservläge efter ett fel. Era svar sparas; nästa fråga följer standardlistan.'
-        : a.ai.lage === 'claude-cli' ? 'AI-stöd: på (lokalt testläge med Claude). Era egna ord sparas ordagrant och skilt från AI:ns tolkningar.' : 'AI-stöd: på. Era egna ord sparas ordagrant och skilt från AI:ns tolkningar.';
+        : prov ? `AI-stöd: på, lokalt testläge med Claude (${prov.namn} · ${prov.anstrangning}). Era egna ord sparas ordagrant och skilt från AI:ns tolkningar.` : 'AI-stöd: på. Era egna ord sparas ordagrant och skilt från AI:ns tolkningar.';
   const bildRader = bild(a);
   const tillvalLista = [...TILLVAL.map((d) => tillvalVy((a.tillval || []).find((t) => t.id === d.id), d.id)), ...(a.tillval || []).filter((t) => !tillvalDef(t.id)).map((t) => tillvalVy(t, t.id))];
   const inlamnad = sistaInl && !a.fragor.some(f => f.status === 'stalld' && (f.kalla === 'returfraga' || (f.oppnad_revision || 0) > sistaInl.revision || f.stalld > sistaInl.tid)) && !a.svar.some(s => s.revision > sistaInl.revision) && !a.rattelser.some(r => r.revision > sistaInl.revision) && !a.material.some(m => m.revision > sistaInl.revision) && !(a.tillval || []).some(t => t.revision > sistaInl.revision) ? { tid: sistaInl.tid, svar: sistaInl.svar, material: sistaInl.material } : null;
@@ -136,7 +140,7 @@ export function tillVy(a: Arende): Vy {
     overlamning: overforing === 'hamtat' ? 'Aktuell inlämning har hämtats av Digitala. Bearbetningen sker i nästa arbetssteg.' : overforing === 'vantar' ? 'Inlämnat och sparat hos oss. Väntar på att hämtas av Digitala.' : overforing === 'andrat_efter' ? 'Ni har ändrat något efter inlämningen. Ändringen är sparad och följer med när Digitala hämtar nästa gång.' : 'Sparat hos oss. Ännu inte inlämnat.',
     overforing,
     arende: { id: a.id, kund: { namn: a.kund.namn }, testdialog: a.testdialog, revision: a.revision, kanal: a.kanal, inlamnad, uppdaterad: a.uppdaterad },
-    ai: { lage: a.ai.lage, modell: a.ai.lage === 'regelstyrd' ? undefined : a.ai.modell, anrop: a.ai.anrop, status: aiStatus, beskrivning: aiBeskrivning },
+    ai: { lage: lageNu, modell: lageNu === 'regelstyrd' ? undefined : a.ai.modell, anrop: a.ai.anrop, status: aiStatus, beskrivning: aiBeskrivning, prov },
     oppna,
     senare: a.fragor.filter((f) => f.status === 'senare').map(fragaVy),
     samtal: a.fragor.filter((f) => f.status !== 'tackt').map((f) => {
