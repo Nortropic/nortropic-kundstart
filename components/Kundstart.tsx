@@ -1,20 +1,23 @@
 'use client';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { klockslag } from '@/lib/klient';
 import type { Vy } from '@/lib/vy';
+import { Ikon } from './Ikon';
 import Samtal from './Samtal';
 import Uppdrag from './Uppdrag';
 
-const BRED = '(min-width: 1024px)';
+const SIDA = '(min-width: 1024px)'; // sidopanel till vänster, som i en vanlig samtalstjänst
+const BRED = '(min-width: 1280px)'; // Ditt uppdrag står dessutom bredvid samtalet
 
-function useBredSkarm(): boolean {
+function useMedia(fraga: string): boolean {
   return useSyncExternalStore(
     (cb) => {
-      const m = window.matchMedia(BRED);
+      const m = window.matchMedia(fraga);
       m.addEventListener('change', cb);
       return () => m.removeEventListener('change', cb);
     },
-    () => window.matchMedia(BRED).matches,
+    () => window.matchMedia(fraga).matches,
     () => false,
   );
 }
@@ -24,11 +27,19 @@ function antal(vy: Vy): number {
   return vy.bild.length + vy.uppdrag.valda.length + vy.material.length;
 }
 
+const OVERFORING: Record<Vy['overforing'], string> = {
+  ej_inlamnat: 'Inte inlämnat än',
+  vantar: 'Inlämnat',
+  hamtat: 'Hämtat av Digitala',
+  andrat_efter: 'Ändrat efter inlämningen',
+};
+
 export default function Kundstart({ start }: { start: Vy }) {
   const [vy, setVy] = useState<Vy>(start);
-  const bred = useBredSkarm();
+  const sida = useMedia(SIDA);
+  const bred = useMedia(BRED);
   const ark = useRef<HTMLDialogElement | null>(null);
-  const oppnaKnapp = useRef<HTMLButtonElement | null>(null);
+  const oppnare = useRef<HTMLElement | null>(null);
   const [arkOppet, setArkOppet] = useState(false);
   const [fokus, setFokus] = useState<string | null>(null);
 
@@ -38,6 +49,8 @@ export default function Kundstart({ start }: { start: Vy }) {
       if (avsnitt) document.getElementById('avsnitt-' + avsnitt)?.scrollIntoView({ block: 'start' });
       return;
     }
+    // Fokus går tillbaka till det som öppnade arket: sidhuvudets knapp, en genväg eller skrivrutans plus.
+    oppnare.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!ark.current?.open) ark.current?.showModal();
     setArkOppet(true);
   }, [bred]);
@@ -51,13 +64,13 @@ export default function Kundstart({ start }: { start: Vy }) {
     if (!d) return;
     const vidStang = () => {
       setArkOppet(false);
-      oppnaKnapp.current?.focus();
+      oppnare.current?.focus();
     };
     d.addEventListener('close', vidStang);
     return () => d.removeEventListener('close', vidStang);
   }, []);
 
-  // Går skärmen över till bred layout medan arket är öppet stängs arket; översikten står då bredvid samtalet.
+  // Blir skärmen så bred att översikten får plats bredvid samtalet stängs arket.
   useEffect(() => {
     if (bred && ark.current?.open) ark.current.close();
   }, [bred]);
@@ -70,27 +83,33 @@ export default function Kundstart({ start }: { start: Vy }) {
 
   const n = antal(vy);
   return (
-    <div className="app">
-      <header className="huvud">
-        <span className="ord">Nortropic<small>Digitala</small></span>
-        <span className="kund">{vy.arende.kund.namn}{vy.arende.testdialog ? ' · testdialog' : ''}</span>
-        {!bred && (
-          <button ref={oppnaKnapp} type="button" className="knapp sekundar uppdrag-knapp" aria-haspopup="dialog" onClick={() => visaUppdrag()}>
-            Ditt uppdrag{n ? <span className="antal" aria-label={`${n} poster`}>{n}</span> : null}
-          </button>
+    <div className={'app' + (sida ? ' med-sida' : '') + (bred ? ' med-uppdrag' : '')}>
+      {sida && <a className="hoppa" href="#samtal">Till samtalet</a>}
+      {sida && <Sidopanel vy={vy} visaUppdrag={visaUppdrag} />}
+      <div className="huvudyta">
+        {!sida && (
+          <header className="huvud">
+            <span className="ord">Nortropic<small>Kundstart</small></span>
+            <button type="button" className="knapp sekundar uppdrag-knapp" aria-haspopup="dialog" onClick={() => visaUppdrag()}>
+              Ditt uppdrag{n ? <span className="antal" aria-label={`${n} poster`}>{n}</span> : null}
+            </button>
+            <span className="kund">{vy.arende.kund.namn}{vy.arende.testdialog ? ' · testdialog' : ''}</span>
+          </header>
         )}
-      </header>
-      <div className="yta">
         <main className="samtal-yta" id="samtal">
           <Samtal vy={vy} setVy={setVy} visaUppdrag={visaUppdrag} />
         </main>
-        {bred && (
-          <aside className="uppdrag-yta" aria-labelledby="uppdrag-rubrik">
-            <Uppdrag vy={vy} setVy={setVy} />
-          </aside>
-        )}
+        <footer className="fot">
+          <span role="status">{vy.ai.beskrivning}</span>
+          <Link href="/om">Så behandlar vi uppgifterna</Link>
+        </footer>
       </div>
-      <dialog ref={ark} className="ark" aria-labelledby="uppdrag-rubrik" onClick={(e) => { if (e.target === ark.current) stangUppdrag(); }}>
+      {bred && (
+        <aside className="uppdrag-yta" aria-labelledby="uppdrag-rubrik">
+          <Uppdrag vy={vy} setVy={setVy} />
+        </aside>
+      )}
+      <dialog ref={ark} className={'ark' + (sida ? ' fran-sidan' : '')} aria-labelledby="uppdrag-rubrik" onClick={(e) => { if (e.target === ark.current) stangUppdrag(); }}>
         {!bred && arkOppet && (
           <div className="ark-inre">
             <div className="ark-topp">
@@ -100,10 +119,49 @@ export default function Kundstart({ start }: { start: Vy }) {
           </div>
         )}
       </dialog>
-      <footer className="fot">
-        <span role="status">{vy.ai.beskrivning}</span>
-        <Link href="/om">Så behandlar vi uppgifterna</Link>
-      </footer>
     </div>
+  );
+}
+
+/** Sidopanelen: vems ärende det är, genvägar in i Ditt uppdrag och läget för sparat och inlämnat. */
+function Sidopanel({ vy, visaUppdrag }: { vy: Vy; visaUppdrag: (avsnitt?: string) => void }) {
+  const u = vy.uppdrag;
+  const forstatt = u.forstatt.reduce((s, g) => s + g.rader.length, 0);
+  const genvagar: { id: string; text: string; ikon: string; antal: number }[] = [
+    { id: 'mal', text: 'Det ni vill uppnå', ikon: 'mal', antal: u.mal.length },
+    { id: 'forstatt', text: 'Verksamheten', ikon: 'verksamhet', antal: forstatt },
+    { id: 'tillval', text: 'Tillval', ikon: 'tillval', antal: u.valda.length },
+    { id: 'material', text: 'Material', ikon: 'material', antal: vy.material.length },
+    { id: 'aterstar', text: 'Det som återstår', ikon: 'aterstar', antal: u.aterstar.length + u.research.length + u.senare.length },
+  ];
+  return (
+    <aside className="sidopanel" aria-label="Kundstart">
+      <div className="sp-topp">
+        <span className="ord">Nortropic</span>
+        <span className="sp-under">Kundstart</span>
+      </div>
+      <nav className="sp-nav" aria-label="Genvägar">
+        <a className="sp-lank" href="#samtal" aria-current="page"><Ikon namn="samtal" /><span>Samtalet</span></a>
+        <p className="sp-rubrik" id="sp-uppdrag">Ditt uppdrag</p>
+        <ul aria-labelledby="sp-uppdrag">
+          {genvagar.map((g) => (
+            <li key={g.id}>
+              <button type="button" className="sp-lank" onClick={() => visaUppdrag(g.id)}>
+                <Ikon namn={g.ikon} />
+                <span>{g.text}</span>
+                {g.antal > 0 && <span className="sp-antal">{g.antal}<span className="sr"> {g.antal === 1 ? 'post' : 'poster'}</span></span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      <div className="sp-fot">
+        <p className="sp-kund">
+          <span className="sp-initial" aria-hidden="true">{(vy.arende.kund.namn.trim()[0] || '?').toUpperCase()}</span>
+          <span className="sp-namn">{vy.arende.kund.namn}{vy.arende.testdialog ? <span className="sp-tagg">testdialog</span> : null}</span>
+        </p>
+        <p className="sp-lage">Senast sparat {klockslag(vy.arende.uppdaterad)} · {OVERFORING[vy.overforing]}</p>
+      </div>
+    </aside>
   );
 }
