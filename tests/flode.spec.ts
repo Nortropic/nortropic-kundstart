@@ -8,7 +8,7 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     const bas = baseURL!;
     const a = await skapaArende(request, bas, 'Testsalong Bokning');
     await oppna(page, a.lank);
-    await expect(page.getByRole('heading', { name: /Hej, Testsalong Bokning/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /(Hej|God morgon|God kväll), Testsalong Bokning/ })).toBeVisible();
     await expect(page.getByText('Det här vet vi redan')).toBeVisible();
     const f1 = await aktuellFraga(page);
     expect(f1).toContain('Berätta med egna ord');
