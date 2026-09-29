@@ -46,7 +46,7 @@ html {
   background: var(--papper);
 }
 /* Skrivrutan ligger fast längst ned: det som får fokus ska inte hamna bakom den. */
-html:has(.komponera.fast) { scroll-padding-bottom: 13rem; }
+html:has(.komponera.fast) { scroll-padding-bottom: calc(var(--dock-h, 12rem) + 1rem); }
 
 body {
   margin: 0;
@@ -117,8 +117,8 @@ button { user-select: none; -webkit-user-select: none; -webkit-touch-callout: no
 }
 .sp-lank .ikon { color: var(--dis); }
 .sp-lank > span:first-of-type { flex: 1 1 auto; min-width: 0; }
-.sp-lank[aria-current='page'] { background: rgba(36, 34, 30, 0.07); font-weight: 500; }
-.sp-lank[aria-current='page'] .ikon { color: var(--black); }
+.sp-lank[aria-current='location'] { background: rgba(36, 34, 30, 0.07); font-weight: 500; }
+.sp-lank[aria-current='location'] .ikon { color: var(--black); }
 @media (hover: hover) and (pointer: fine) {
   .sp-lank:hover { background: rgba(36, 34, 30, 0.05); color: var(--black); }
 }
@@ -220,6 +220,10 @@ textarea.svar-falt {
 }
 .start-fraga .komponera textarea.svar-falt { min-height: 5rem; }
 textarea.svar-falt::placeholder { color: var(--dis-ljus); }
+@supports not (field-sizing: content) {
+  /* Webbläsare utan växande fält (t.ex. Firefox): högre ruta som kunden kan dra större. */
+  textarea.svar-falt { min-height: 6rem; resize: vertical; }
+}
 .ruta-rad { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
 .ruta-rad .skicka { order: 9; margin-left: auto; }
 .ruta-ikon {
@@ -299,6 +303,8 @@ textarea.ratt-falt:focus, input.falt:focus { outline: 2px solid var(--hav); outl
 .uppdrag h1 { margin-top: 0.25rem; font-size: 1.625rem; }
 .uppdrag-status { font-size: 0.875rem; color: var(--dis); margin: 0 0 0.5rem; }
 .avsnitt { border-top: 1px solid var(--linje); margin-top: 1.25rem; padding-top: 0.25rem; scroll-margin-top: 1rem; }
+.avsnitt:focus, #uppdrag-rubrik:focus { outline: none; }
+.avsnitt:focus-visible, #uppdrag-rubrik:focus-visible { outline: 2px solid var(--hav); outline-offset: 4px; }
 .avsnitt > h2 { font-size: 1.1875rem; margin: 0.875rem 0 0.5rem; }
 .grupp { margin-top: 0.5rem; }
 .grupp-rubrik { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--dis); margin: 1rem 0 0.375rem; }
@@ -376,7 +382,7 @@ dialog.ark.fran-sidan .ark-topp { background: var(--yta); }
 
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* Hopplänk förbi sidopanelen, synlig när den får fokus */
-.hoppa { position: absolute; left: 1rem; top: -4rem; z-index: 20; background: var(--yta); color: var(--hav-mork); border: 1px solid var(--linje-stark); border-radius: 999px; padding: 0.5rem 1rem; }
+.hoppa { position: fixed; left: 1rem; top: -4rem; z-index: 20; background: var(--yta); color: var(--hav-mork); border: 1px solid var(--linje-stark); border-radius: 999px; padding: 0.5rem 1rem; }
 .hoppa:focus { top: calc(0.75rem + env(safe-area-inset-top, 0px)); }
 
 @media (prefers-reduced-motion: reduce) {

@@ -122,7 +122,7 @@ export default function Samtal({ vy, setVy, visaUppdrag }: { vy: Vy; setVy: (v: 
   const kanda = vy.bild.filter((b) => b.typ === 'forifylld');
 
   const fragor = !bekraftelse && vy.oppna.map((f, i) => (
-    <FragaKort key={f.id} fraga={f} vy={vy} setVy={setVy} visaUppdrag={visaUppdrag} lage={forsta ? 'start' : i === 0 ? 'fast' : 'inline'}
+    <FragaKort key={f.id} fraga={f} vy={vy} setVy={setVy} visaUppdrag={visaUppdrag} lage={forsta ? 'start' : i === vy.oppna.length - 1 ? 'fast' : 'inline'}
       rubrikRef={i === 0 ? fragaRef : undefined} onSparat={(v) => { setVy(v); setAndring(''); }} />
   ));
   const vantar = hamtar && <p className="status vantar" role="status">AI-stödet läser det ni skrivit och formulerar nästa fråga …</p>;
@@ -289,6 +289,18 @@ function FragaKort({ fraga, vy, setVy, visaUppdrag, lage: plats, rubrikRef, onSp
     }
   }
 
+  // Den fasta rutans verkliga höjd blir sidans marginal nedtill, så att det som får fokus inte hamnar bakom rutan
+  // (till exempel när "Fler sätt" är utfällt på en smal skärm).
+  const dockRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = dockRef.current;
+    if (plats !== 'fast' || !el || typeof ResizeObserver === 'undefined') return;
+    const rot = document.documentElement;
+    const ro = new ResizeObserver(() => rot.style.setProperty('--dock-h', Math.ceil(el.getBoundingClientRect().height) + 'px'));
+    ro.observe(el);
+    return () => { ro.disconnect(); rot.style.removeProperty('--dock-h'); };
+  }, [plats]);
+
   const statusText = lage === 'sparar' ? 'Sparar …' : lage === 'osparad' ? 'Inte skickat än' : lage === 'sparat' ? 'Sparat' : '';
   const tillval = fraga.typ === 'tillval' ? (fraga.tillval || []).map((id) => vy.tillval.find((t) => t.id === id)).filter(Boolean) : [];
   const sparar = lage === 'sparar';
@@ -318,7 +330,7 @@ function FragaKort({ fraga, vy, setVy, visaUppdrag, lage: plats, rubrikRef, onSp
           </div>
         )}
       </div>
-      <div className={'komponera' + (plats === 'fast' ? ' fast' : '')}>
+      <div className={'komponera' + (plats === 'fast' ? ' fast' : '')} ref={dockRef}>
         <div className="ruta">
           <label className="sr" htmlFor={'svar-' + fraga.id}>Ert svar</label>
           <textarea id={'svar-' + fraga.id} className="svar-falt" rows={plats === 'start' ? 3 : 2} value={text} onChange={(e) => andra(e.target.value)}

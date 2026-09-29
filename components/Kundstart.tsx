@@ -46,11 +46,19 @@ export default function Kundstart({ start }: { start: Vy }) {
   const visaUppdrag = useCallback((avsnitt?: string) => {
     setFokus(avsnitt || null);
     if (bred) {
-      if (avsnitt) document.getElementById('avsnitt-' + avsnitt)?.scrollIntoView({ block: 'start' });
+      // Översikten står redan bredvid: flytta dit, och flytta fokus så att tangentbord och skärmläsare följer med.
+      const el = document.getElementById(avsnitt ? 'avsnitt-' + avsnitt : 'uppdrag-rubrik');
+      if (el) {
+        el.scrollIntoView({ block: 'start' });
+        if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+        el.focus({ preventScroll: true });
+      }
       return;
     }
-    // Fokus går tillbaka till det som öppnade arket: sidhuvudets knapp, en genväg eller skrivrutans plus.
-    oppnare.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // Fokus går tillbaka till det som öppnade arket: sidhuvudets knapp, en genväg eller skrivrutans plus. Safari
+    // fokuserar inte en knapp vid klick; då används sidhuvudets knapp eller frågan som reserv när arket stängs.
+    const aktiv = document.activeElement;
+    oppnare.current = aktiv instanceof HTMLElement && aktiv !== document.body ? aktiv : null;
     if (!ark.current?.open) ark.current?.showModal();
     setArkOppet(true);
   }, [bred]);
@@ -64,7 +72,9 @@ export default function Kundstart({ start }: { start: Vy }) {
     if (!d) return;
     const vidStang = () => {
       setArkOppet(false);
-      oppnare.current?.focus();
+      const mal = oppnare.current?.isConnected ? oppnare.current
+        : document.querySelector<HTMLElement>('.uppdrag-knapp') || document.querySelector<HTMLElement>('h2.fragetext');
+      mal?.focus();
     };
     d.addEventListener('close', vidStang);
     return () => d.removeEventListener('close', vidStang);
@@ -85,7 +95,7 @@ export default function Kundstart({ start }: { start: Vy }) {
   return (
     <div className={'app' + (sida ? ' med-sida' : '') + (bred ? ' med-uppdrag' : '')}>
       {sida && <a className="hoppa" href="#samtal">Till samtalet</a>}
-      {sida && <Sidopanel vy={vy} visaUppdrag={visaUppdrag} />}
+      {sida && <Sidopanel vy={vy} antal={n} visaUppdrag={visaUppdrag} />}
       <div className="huvudyta">
         {!sida && (
           <header className="huvud">
@@ -124,7 +134,7 @@ export default function Kundstart({ start }: { start: Vy }) {
 }
 
 /** Sidopanelen: vems ärende det är, genvägar in i Ditt uppdrag och läget för sparat och inlämnat. */
-function Sidopanel({ vy, visaUppdrag }: { vy: Vy; visaUppdrag: (avsnitt?: string) => void }) {
+function Sidopanel({ vy, antal: totalt, visaUppdrag }: { vy: Vy; antal: number; visaUppdrag: (avsnitt?: string) => void }) {
   const u = vy.uppdrag;
   const forstatt = u.forstatt.reduce((s, g) => s + g.rader.length, 0);
   const genvagar: { id: string; text: string; ikon: string; antal: number }[] = [
@@ -135,15 +145,22 @@ function Sidopanel({ vy, visaUppdrag }: { vy: Vy; visaUppdrag: (avsnitt?: string
     { id: 'aterstar', text: 'Det som återstår', ikon: 'aterstar', antal: u.aterstar.length + u.research.length + u.senare.length },
   ];
   return (
-    <aside className="sidopanel" aria-label="Kundstart">
+    <aside className="sidopanel" aria-label="Ert ärende">
       <div className="sp-topp">
         <span className="ord">Nortropic</span>
         <span className="sp-under">Kundstart</span>
       </div>
       <nav className="sp-nav" aria-label="Genvägar">
-        <a className="sp-lank" href="#samtal" aria-current="page"><Ikon namn="samtal" /><span>Samtalet</span></a>
+        <a className="sp-lank" href="#samtal" aria-current="location"><Ikon namn="samtal" /><span>Samtalet</span></a>
         <p className="sp-rubrik" id="sp-uppdrag">Ditt uppdrag</p>
         <ul aria-labelledby="sp-uppdrag">
+          <li>
+            <button type="button" className="sp-lank" onClick={() => visaUppdrag()}>
+              <Ikon namn="oversikt" />
+              <span>Hela översikten</span>
+              {totalt > 0 && <span className="sp-antal">{totalt}<span className="sr"> {totalt === 1 ? 'post' : 'poster'}</span></span>}
+            </button>
+          </li>
           {genvagar.map((g) => (
             <li key={g.id}>
               <button type="button" className="sp-lank" onClick={() => visaUppdrag(g.id)}>
