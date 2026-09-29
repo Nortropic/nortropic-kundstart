@@ -32,11 +32,21 @@ function privatKatalog() {
   chmodSync(DATA, 0o700);
 }
 
+// Processens starttid (ps lstart, C-locale så att formatet inte beror på språkinställningen).
+function starttid(p) {
+  const r = spawnSync('ps', ['-o', 'lstart=', '-p', String(p)], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } });
+  return r.status === 0 ? r.stdout.trim() : '';
+}
+
+// Serverns pid bara om den är samma process som startades: efter en omstart kan pid-numret tillhöra en annan process,
+// och den ska varken räknas som servern eller stoppas.
 function pid() {
   try {
-    const p = Number(readFileSync(PIDFIL, 'utf8').trim());
+    const [rad, start] = readFileSync(PIDFIL, 'utf8').split('\n');
+    const p = Number(rad);
+    if (!Number.isInteger(p) || p <= 1 || !start) return null;
     process.kill(p, 0);
-    return p;
+    return starttid(p) === start ? p : null;
   } catch {
     return null;
   }
@@ -102,7 +112,7 @@ async function start() {
     env: { ...process.env, KUNDSTART_AI: 'claude-cli', KUNDSTART_PROV_DATA: DATA, NODE_ENV: 'production' },
   });
   closeSync(fd);
-  writeFileSync(PIDFIL, String(barn.pid) + '\n', { mode: 0o600 });
+  writeFileSync(PIDFIL, `${barn.pid}\n${starttid(barn.pid)}\n`, { mode: 0o600 });
   barn.unref();
   for (let i = 0; i < 120; i++) {
     await vila(500);
