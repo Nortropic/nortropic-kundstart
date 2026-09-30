@@ -113,3 +113,28 @@ Listan innehåller namn, version och installationsskript, även ändring med sam
 CI beräknar listan mot PR:ens bas (push mot föregående commit). `unrs-resolver` är
 enda tillåtna installationsskriptmarkeringen i applikationslåset; skriptet körs ändå inte.
 Vercel CLI har en separat låsfil och installeras alltid med `--ignore-scripts`; se DRIFT.md.
+
+
+### Sju dagars karenstid före paketkod (f00327 L3)
+
+`npm run kontroll:lasfil` jämför med exakt avläst `origin/main`; CI lämnar sin
+bascommit med `--bas`. Varje ny/ändrad låsfilspost får versionens publiceringstid
+från npm-registrets fullständiga paketmetadata. Före sju hela dygn stoppas den.
+Fel, saknad tid, fel paket, redirect, svar över 64 MiB eller tio sekunders timeout
+blir **kunde inte kontrolleras** och stoppar även med undantag. Registrets svar
+kör ingen paketkod. Npm-alias vars verkliga paketnamn skiljer sig från installationsnamnet vägras
+före uppslag och undantag; inget annat pakets ålder kan lånas.
+Oförändrade paket ger inga nya uppslag. Inga npm-inställningar
+för releaseålder används.
+
+`paketundantag.json` har schema 1 och listan `undantag`. Varje granskad undantagsrad
+kräver `paket`, exakt `version`, `skal` och `datum` (ÅÅÅÅ-MM-DD). Den står vid paketet
+i den maskinella ändringslistan, även när paketet är gammalt nog. Filen har inga
+undantag vid införandet. Datum i framtiden och dubbla rader vägras.
+
+Lokalt före driftsättning: hämta `origin/main`, kör `npm run kontroll:lasfil` **före**
+`npm ci`, leveranskedjeprov, audit, lint, typecheck, kärnprov och bygge. CI följer
+samma ordning; `npm run prov -- start` kontrollerar också låsfil/karenstid innan
+sitt lokala bygge. Det här steget startar eller driftsätter ingenting självt.
+Källa för metadata: https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md
+(läst 2026-09-30), med `time[version]` i fullmetadata.

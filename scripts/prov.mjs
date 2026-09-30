@@ -100,6 +100,8 @@ async function start() {
   let byggd = {};
   try { byggd = JSON.parse(readFileSync(BYGGD, 'utf8')); } catch { /* första gången */ }
   if (!existsSync(join(ROT, '.next', 'BUILD_ID')) || byggd.head !== head || smutsig || byggd.smutsig) {
+    const supply = spawnSync(process.execPath, [join(ROT, 'scripts/lasfil.mjs')], { cwd: ROT, stdio: 'inherit' });
+    if (supply.status !== 0) return console.error('Låsfil/karenstid vägrad; inget paketbygge startades.'), 1;
     console.log(`Bygger ${head.slice(0, 7)}${smutsig ? ' med ocommittade ändringar' : ''} …`);
     const b = spawnSync('npm', ['run', '-s', 'build'], { cwd: ROT, stdio: 'inherit', env: { ...process.env, KUNDSTART_AI: 'claude-cli' } });
     if (b.status !== 0) return console.error('Bygget misslyckades; servern startades inte.'), 1;
