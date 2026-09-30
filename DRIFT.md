@@ -131,3 +131,30 @@ den publicerade `atgarder/dokumentkontinuitet-20260928` tillför enbart denna fa
 är inte den tidigare koddomens exakta SHA. Senaste dokumentpublicering binds separat i
 kontorets privata `drift/plan-kontinuitet-efter-r4/PUBLICERING-EFTER-R4.json` när den är gjord;
 kontorets plan äger fortsatt nästa handling, leveransbeskedet är daterade fakta.
+
+## Låst driftsättningskommando (OVL-20260930-dbbdd8 B5)
+
+Vercel CLI **60.0.1**, samma version som den befintliga globala installationen vid
+avläsningen 2026-09-30, låses separat i `verktyg/vercel-cli/package.json` och dess
+låsfil med npm-integritet. Installera från primärutcheckningen:
+
+```sh
+npm ci --prefix verktyg/vercel-cli --ignore-scripts
+python3 -I -B scripts/vercel_las.py --kontrollera
+# Endast vid ett uppdrag som namnger driftsättning:
+python3 -I -B scripts/vercel_las.py deploy --prod
+```
+
+Vakten kräver den kvalificerade Mac/arm64-miljön, ren primärutcheckning på `main`
+och samma revision som lokalt återlästa `origin/main`. Den verifierar SHA-256 för
+CLI-manifestet, låsfilen och Vercels kompletta bundlade native-binär innan någon
+leverantörskod eller autentisering startar. Binärens hash har jämförts med medlemmen
+`package/bin/vercel` i npm-arkivet vars SHA-512 stämmer med låsfilens integritet.
+Symlänkar och grupp-/världsskrivbar binär vägras. Ingen global CLI eller ändringsbar
+JavaScript-importkedja används. Linux/annan arkitektur kräver egen kvalificering.
+
+Detta byter den lokala kommandovägen; enbart versions- och vägransprov körs i denna
+beställning, ingen driftsättning. Den globala installationen och produktionen
+ändras inte. En ny CLI-version kräver nytt manifest/lås, uppmätta hashvärden i
+vakten, granskning och skyddad integration. Uppdatera inte hashvärden för att passera
+ett oväntat fel. Den tidigare `vercel deploy --prod` ersätts av kommandot ovan.

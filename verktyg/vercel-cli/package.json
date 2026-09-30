@@ -1,0 +1,8 @@
+{
+  "name": "nortropic-kundstart-vercel-cli",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "vercel": "60.0.1"
+  }
+}
