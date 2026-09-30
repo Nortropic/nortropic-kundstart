@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { provaAlder } from './paketalder.mjs';
 
 const exakt = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const namn = plats => plats.split('node_modules/').at(-1);
@@ -17,6 +18,7 @@ export function kontrollera(lock, manifest) {
   for (const [plats, pkg] of Object.entries(lock.packages)) {
     if (!plats) continue;
     if (!/^(?:node_modules\/(?:@[\w.-]+\/)?[\w.-]+\/)*node_modules\/(?:@[\w.-]+\/)?[\w.-]+$/.test(plats) || pkg.link) throw Error('otillåten paketplats/länk');
+    if (pkg.name !== undefined && pkg.name !== namn(plats)) throw Error(`paketalias vägras före åldersuppslag: ${plats}`);
     const u = new URL(pkg.resolved);
     if (u.protocol !== 'https:' || u.hostname !== 'registry.npmjs.org' || u.port || u.username || u.password || u.search || u.hash) throw Error(`otillåten källa: ${plats}`);
     const sri = /^(sha512|sha256)-([A-Za-z0-9+/]+={0,2})$/.exec(pkg.integrity ?? '');
@@ -34,17 +36,21 @@ export function andringar(bas, kandidat) {
   });
 }
 
-export function main(args = process.argv.slice(2)) {
+export async function main(args = process.argv.slice(2)) {
   try {
     const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
     kontrollera(lock, JSON.parse(readFileSync('package.json', 'utf8')));
-    let base;
+    let revision;
     if (args.length) {
       if (args.length !== 2 || args[0] !== '--bas' || !/^[0-9a-f]{40}$/.test(args[1]) || /^0+$/.test(args[1])) throw Error('--bas kräver en befintlig commit');
-      base = JSON.parse(execFileSync('git', ['show', `${args[1]}:package-lock.json`], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
+      revision = args[1];
     }
-    console.log(JSON.stringify({ lasfil: 'godkänd', paketandringar: base ? andringar(base, lock) : null }, null, 2));
-    return 0;
+    revision ??= execFileSync('git', ['rev-parse', '--verify', 'origin/main'], { encoding: 'utf8' }).trim();
+    if (!/^[0-9a-f]{40}$/.test(revision)) throw Error('origin/main kunde inte bindas');
+    const base = JSON.parse(execFileSync('git', ['show', `${revision}:package-lock.json`], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }));
+    const result = await provaAlder(andringar(base, lock), JSON.parse(readFileSync('paketundantag.json', 'utf8')));
+    console.log(JSON.stringify({ lasfil: result.godkand ? 'godkänd' : 'vägrad', bas: revision, ...result }, null, 2));
+    return result.godkand ? 0 : 1;
   } catch (error) { console.error(`Låsfil vägrad: ${error.message}`); return 1; }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) process.exitCode = main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) process.exitCode = await main();
