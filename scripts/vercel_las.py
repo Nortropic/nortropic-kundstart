@@ -4,11 +4,14 @@ import json
 import os
 from pathlib import Path
 import platform
+import pwd
 import stat
 import subprocess
 import sys
 
-PRIMAR = Path('/Users/elinhaggstrom/nortropic-repos/nortropic-kundstart')
+# Operativsystemets konto är källan, aldrig en ärvd HOME från ett arbetsträd.
+def primar():
+    return Path(pwd.getpwuid(os.getuid()).pw_dir) / 'nortropic-repos/nortropic-kundstart'
 # Ändring kräver ny låsfil, separat granskning och skyddad integration.
 PINS = {'verktyg/vercel-cli/package.json': 'ed494af81aa4b618839d690c5ee3e39292b77d071b0f4c1aa9cdd5c9f5270d8f', 'verktyg/vercel-cli/package-lock.json': '0d2661007d3ef0232a63b3f08fc764edfebc8425b62f6fc49b2b70a545c669da', 'verktyg/vercel-cli/node_modules/@vercel/vc-native-darwin-arm64/bin/vercel': '5a2d2de7750e7d152ff44db352bbd53f479a1a4cbb7cdee52dbd302f5a5c6839'}
 BINARY = 'verktyg/vercel-cli/node_modules/@vercel/vc-native-darwin-arm64/bin/vercel'
@@ -48,7 +51,7 @@ def main(args=None):
         if args == ['--kontrollera']:
             print(json.dumps({'version': '60.0.1', 'lage': 'hashkontrollerad', 'autentisering': False}))
             return 0
-        if rot != PRIMAR or Path.cwd().resolve() != PRIMAR:
+        if rot != primar() or Path.cwd().resolve() != primar():
             raise ValueError('driftsättning kräver primärutcheckningen')
         def git(*a):
             return subprocess.check_output(['git', *a], cwd=rot, text=True, env={'PATH': '/usr/bin:/bin'}).strip()

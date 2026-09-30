@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -13,6 +14,17 @@ spec.loader.exec_module(vakt)
 
 
 class CLI(unittest.TestCase):
+    def test_primar_kommer_fran_os_kontot_inte_home_eller_arbetsyta(self):
+        with patch.dict(vakt.os.environ, {'HOME': '/tmp/annan-arbetsyta'}), \
+                patch.object(vakt.pwd, 'getpwuid', return_value=SimpleNamespace(pw_dir='/var/owner')) as account:
+            self.assertEqual(vakt.primar(), Path('/var/owner/nortropic-repos/nortropic-kundstart'))
+            account.assert_called_once_with(vakt.os.getuid())
+            with patch.object(vakt, 'kontrollera', return_value=Path('/not-executed')), \
+                    patch.object(vakt.subprocess, 'check_output') as git, patch.object(vakt.os, 'execve') as run:
+                self.assertEqual(vakt.main(['deploy', '--prod']), 2)
+                git.assert_not_called()
+                run.assert_not_called()
+
     def test_andrad_lasfil_binar_symlank_och_plattform_stoppar(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve(); pins = {}
