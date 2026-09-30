@@ -68,7 +68,7 @@ miljövariabler, AI-läge, gränser och kostnader.
 ## Kör lokalt
 
 ```sh
-npm install
+npm ci
 vercel env pull .env.local        # Blob-token, OIDC, KUNDSTART_HEMLIGHET, KUNDSTART_INTERN_NYCKEL
 npm run build && KUNDSTART_AI=regelstyrd npx next start -H 127.0.0.1 -p 3111
 npm run test:e2e                  # Playwright mot 127.0.0.1:3111 (startar servern själv om ingen kör)
@@ -96,3 +96,20 @@ KUNDSTART_AI=claude-cli npx playwright test tests/ai.spec.ts tests/provlage.spec
 ## Överlämning och åtgärdskontrakt
 
 [KUNDSTART-KONTRAKT.md](KUNDSTART-KONTRAKT.md) beskriver den beständiga revisionssignalen, intern kvittens, returfrågor, materialets lässtatus och AI-felklasser. Signalen är en del av befintligt ärende; faktisk schemalagd import verifieras i Digitala/Runtime. G01:s legitima hostade kundåtkomst är en separat driftskonfiguration och bevisas inte av intern Vercel-bypass.
+
+## Beroenden och leveranskedja
+
+`OVL-20260930-dbbdd8` B1–B5 låser befintliga direkta versioner och Vercel CLI.
+`.npmrc` stänger installationsskript; använd `npm ci`, också i CI och värdens bygge.
+Kör `npm run kontroll:lasfil`, `npm run test:leveranskedja` och `npm run kontroll:audit`
+före lint, typecheck, kärnprov och bygge. Ett uppslagsfel är **kunde inte kontrolleras**
+och stoppar; höga/kritiska sårbarheter och alla rapporter om skadlig kod stoppar.
+Varningar under hög nivå visas för bedömning. Automatisk uppgradering ingår inte.
+
+En PR som ändrar `package.json` eller `package-lock.json` ska redovisa maskinens
+paketlista från `node scripts/lasfil.mjs --bas <basens fulla commit>` och ett daterat
+uppslag i [GitHubs säkerhetsdatabas](https://github.com/advisories) för varje nytt paket.
+Listan innehåller namn, version och installationsskript, även ändring med samma version.
+CI beräknar listan mot PR:ens bas (push mot föregående commit). `unrs-resolver` är
+enda tillåtna installationsskriptmarkeringen i applikationslåset; skriptet körs ändå inte.
+Vercel CLI har en separat låsfil och installeras alltid med `--ignore-scripts`; se DRIFT.md.

@@ -11,11 +11,14 @@
     "test:e2e": "playwright test",
     "bank:kontroll": "node verktyg/bank_kontroll.mjs",
     "test:core": "node tests/core/intag.cjs && node tests/core/agent.cjs",
-    "prov": "node scripts/prov.mjs"
+    "prov": "node scripts/prov.mjs",
+    "kontroll:lasfil": "node scripts/lasfil.mjs",
+    "kontroll:audit": "node scripts/audit.mjs",
+    "test:leveranskedja": "node --test tests/core/leveranskedja.mjs && python3 -I -B tests/core/vercel_las.py"
   },
   "dependencies": {
     "@vercel/blob": "2.8.0",
-    "@vercel/oidc": "^3.8.9",
+    "@vercel/oidc": "3.8.9",
     "next": "16.3.6",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -23,11 +26,11 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
-    "@types/node": "^22",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
+    "@types/node": "22.20.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "eslint": "9.39.5",
     "eslint-config-next": "16.3.6",
-    "typescript": "^5"
+    "typescript": "5.9.3"
   }
 }
