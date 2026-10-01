@@ -136,6 +136,7 @@ export interface Syntes {
   valjare: 'ai' | 'regelstyrd';
   modell?: string;
   anstrangning?: string;
+  nedvaxlad_fran?: string; // syntesen avbröts på denna nivå och skrevs på NEDVAXLING (lib/provlage.ts)
   ms?: number;
   forsok: number;
   fel?: string;

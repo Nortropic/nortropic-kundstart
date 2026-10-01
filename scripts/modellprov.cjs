@@ -4,7 +4,7 @@
 // på ägarens egen inloggning (bara ägarens egna prov; aldrig på Vercel, aldrig för kunder). Skriver tid, cache-fält,
 // token, validerad utdata och avvisade noteringar, så att prompterna kan itereras mot riktig modell.
 //
-//   node scripts/modellprov.cjs [--model claude-opus-5-5] [--effort low] [--bara tur|syntes]
+//   node scripts/modellprov.cjs [--model claude-opus-5-5] [--effort low] [--bara tur|syntes] [--timeout 300]   (sekunder per anrop)
 //
 // Förbrukningen räknas i abonnemangets kvot (en modellsession per anrop); listpriset skrivs bara som diagnos.
 const fs = require('node:fs');
@@ -22,6 +22,7 @@ const arg = (namn, standard) => { const i = process.argv.indexOf(namn); return i
 const modell = arg('--model', 'claude-opus-5-5');
 const effort = arg('--effort', 'low');
 const bara = arg('--bara', '');
+const timeoutMs = Number(arg('--timeout', '300')) * 1000;
 const fix = JSON.parse(fs.readFileSync(path.join(__dirname, '../tests/core/fixtur-arende-133f37f.json'), 'utf8')).arende;
 const kanda = A.bild(fix).map((b) => ({ nyckel: b.nyckel, varde: b.varde, status: b.status, kalla: b.typ === 'kund' ? 'kunden' : b.typ === 'ai' ? 'vår tolkning' : b.kalla }));
 const tackning = T.tackning(fix).map((x) => ({ nyckel: x.nyckel, status: x.status, fraga: x.fraga, prio: x.prio }));
@@ -31,7 +32,7 @@ async function kor(slag, system, anvandare, schema, maxTokens, validera) {
   console.log(`\n== ${slag} == modell ${modell} · ansträngning ${effort} · systemprompt ${kb(system)} · meddelande ${kb(anvandare)}`);
   const start = Date.now();
   try {
-    const r = await MO.viaClaudeCli({ modell, system, anvandare, schemaNamn: 'kundstart_' + slag, schema, maxTokens, timeoutMs: 300_000, anstrangning: effort });
+    const r = await MO.viaClaudeCli({ modell, system, anvandare, schemaNamn: 'kundstart_' + slag, schema, maxTokens, timeoutMs, anstrangning: effort });
     const ut = validera(r.rå);
     console.log(`tid ${Date.now() - start} ms · tokens in ${r.tokens_in} ut ${r.tokens_out} · cache_read ${r.diagnos.cache_read} cache_write ${r.diagnos.cache_write} · listpris (ej kostnad) ${r.diagnos.listpris_usd_ej_kostnad}`);
     console.log(ut ? JSON.stringify(ut, null, 2) : 'VALIDERING: svaret gick inte att använda\n' + JSON.stringify(r.rå, null, 2));

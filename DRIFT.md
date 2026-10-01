@@ -53,8 +53,13 @@ kostnadsspärren finns kvar i koden men är avstängda; de är den väg Anthropi
   högst sex per ärende och startar ingen hämtning i Kundstart. Fri text från kunden startar aldrig verktygsloopar
   eller webbhämtning. Sidfoten visar faktiskt läge (på, av, reserv, paus, kostnadsgräns, kvot).
 - Turen och syntesen: turen är liten (2 500 token, omtag 4 000 bara efter avkortning) och ställer en fråga; syntesen
-  körs en gång efter avslutet (12 000 token, omtag 16 000) under ett eget lås (`/api/granska`, 300 s i testläget) och
-  skrivs om bara på begäran (`{igen:true}`) när kunden ändrat något. Misslyckas syntesen stannar ärendet i avslut med
+  körs en gång efter avslutet (12 000 token, omtag 16 000) under ett eget lås (`/api/granska`) och
+  skrivs om bara på begäran (`{igen:true}`) när kunden ändrat något. Tidsgränserna i testläget följer ansträngningen:
+  turen 170 s till och med medium, 300 s high, 420 s max/xhigh; syntesen 300 s, 600 s respektive 900 s (Opus 5.5 på max
+  mättes 2026-10-01 till 70–248 s per tur, och syntesen avbröts vid den gamla gränsen 300 s). Avbryts syntesen av
+  tidsgränsen på high/xhigh/max görs ett försök till på medium (mätt 57 s) i samma anrop, bokfört som `nedvaxlad_fran`
+  i syntesen, händelsen `syntes` och diagnostiken; låset täcker båda försöken. Ett `claude -p`-anrop kapas hårt efter
+  25 minuter. Misslyckas syntesen stannar ärendet i avslut med
   svaren orörda och kunden kan försöka igen; efter tre fel sammanställs kundens svar deterministiskt (reserv), så att
   granskningen alltid nås. Gateway-syntes på Vercel skulle slå i funktionstiden (60 s) och falla till reserven; vägen
   är ändå avstängd. Kundens eget avslut (`/api/avsluta`) låter intervjuaren avrunda med ett turanrop.

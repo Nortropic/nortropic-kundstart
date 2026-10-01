@@ -94,7 +94,10 @@ svar deterministiskt efter tre fel (`valjare:"regelstyrd"`). Ett kvotbesked frå
 och `nyckelinsikt` måste stå ordagrant i kundens svar eller material; annars tas citattecknen bort och posten bokförs
 som avvisad (`sammanfattning`, `citat_saknas_i_kundens_svar`). Sammanfattningen är aktuell (`syntes.aktuell` i vyn)
 så länge kundens senaste ändring inte har högre revision än syntesens egen skrivrevision (`syntes.revision`); syntesens
-egna tillvalsskrivningar gör den inte inaktuell.
+egna tillvalsskrivningar gör den inte inaktuell. Tidsgränserna i testläget följer ansträngningen (turen 170/300/420 s,
+syntesen 300/600/900 s för till och med medium/high/max–xhigh); en syntes som avbryts av tidsgränsen på high/xhigh/max
+får ett försök till på medium i samma anrop och bokförs med `syntes.nedvaxlad_fran` (också i händelsen `syntes` och i
+`ai.diagnostik[].anstrangning`).
 
 Inlämningen kräver kroppen `{idempotens, samtycke:{version:"samtycke/1", text, bekraftat:true, transkript_last:true}}`
 med exakt den text som visades (`lib/samtycke.ts`; 422 annars) och fasen granskning eller inlamnat (409 annars).

@@ -7,10 +7,11 @@ import { aktuellFraga, avsluta, borja, internHuvud, lasOchLamnaIn, oppna, skapaA
 // på modellens ordval: att intervjuaren ställt egna frågor med återkoppling, att avrundningen speglar samtalet, att
 // syntesens noteringar och citat har verifierade källor och att exporten visar samma ärende.
 // Tips: KUNDSTART_AVSLUT_EFTER_FRAGOR=3 (webServer.env) låter intervjuaren avrunda själv efter tre frågor.
+// Tidsgränserna rymmer standardvalet Opus 5.5 på max: en tur upp till 420 s, syntesen 900 s plus ett försök på medium.
 const LAGE = process.env.KUNDSTART_AI || 'regelstyrd';
 const evidens = process.env.KUNDSTART_EVIDENS;
 test.skip(LAGE === 'regelstyrd', 'kräver KUNDSTART_AI=claude-cli eller gateway');
-test.setTimeout(1_200_000);
+test.setTimeout(3_000_000);
 
 type Export = {
   fas: string;
@@ -52,7 +53,7 @@ test(`verklig intervju (${LAGE}): egna frågor med återkoppling, avrundning, sy
       const h2 = page.locator('h2.fragetext').first();
       if ((await h2.count()) === 0) return false; // nästa fråga hämtas fortfarande
       return ((await h2.textContent()) || '').trim() !== forra;
-    }, { timeout: 300_000, intervals: [500, 1_000, 2_000] }).toBe(true);
+    }, { timeout: 480_000, intervals: [500, 1_000, 2_000] }).toBe(true);
     tider.push(Date.now() - t0);
     if (await page.locator('.aktuell.avslut').count()) { avrundat = true; break; }
     forra = await aktuellFraga(page);
@@ -82,7 +83,7 @@ test(`verklig intervju (${LAGE}): egna frågor med återkoppling, avrundning, sy
   await page.locator('.aktuell.avslut textarea.svar-falt').fill('Nej, det var allt. Tack!');
   const t1 = Date.now();
   await page.getByRole('button', { name: 'Skicka och gå vidare' }).click();
-  await expect(page.locator('.granskning')).toBeVisible({ timeout: 600_000 });
+  await expect(page.locator('.granskning')).toBeVisible({ timeout: 1_500_000 });
   const syntesMs = Date.now() - t1;
   ex = await exportera();
   expect(ex.fas).toBe('granskning');

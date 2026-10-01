@@ -10,7 +10,7 @@ import { kontrolleraDoman, normaliseraDoman, type DomanKontroll } from './doman'
 import { lasDok, laggFil, skapaDok, taBortFil, uppdateraDok } from './lagring';
 import { MAX_ANTAL, MAX_TOTAL, extrahera } from './material';
 import { ModellFel, viaClaudeCli, viaGateway, type ModellSvar } from './modell';
-import { lasProv, lasSyntesProv, provTillatet, syntesTimeoutMs, turTimeoutMs, type ProvVal } from './provlage';
+import { NEDVAXLING, lasProv, lasSyntesProv, nedvaxlas, provTillatet, syntesTimeoutMs, turTimeoutMs, type ProvVal } from './provlage';
 import { signalera } from './overlamning';
 import { samlaBehov, laggBehov, tackning, behovMedStatus } from './tackning';
 import { TILLVAL_IDS, annatId, arAnnat } from './tillval';
@@ -847,8 +847,8 @@ export function syntesRegelstyrd(a: Arende): Pick<Syntes, 'sammanfattning' | 'ny
   return { sammanfattning: ['Det ni berättat, i era egna ord:', ...rader].join('\n\n'), nyckelinsikt: '', oppet };
 }
 
-function skrivSyntes(a: Arende, d: Pick<Syntes, 'sammanfattning' | 'nyckelinsikt' | 'oppet'>, meta: { valjare: Syntes['valjare']; bas_revision: number; modell?: string; anstrangning?: string; ms?: number; avvisade?: number }) {
-  a.syntes = { id: `S${a.revision}`, status: 'klar', bas_revision: meta.bas_revision, revision: a.revision, tid: nu(), valjare: meta.valjare, modell: meta.modell, anstrangning: meta.anstrangning, ms: meta.ms, forsok: (a.syntes?.status === 'misslyckad' ? a.syntes.forsok : 0) + 1, sammanfattning: d.sammanfattning, nyckelinsikt: d.nyckelinsikt, oppet: d.oppet, avvisade: meta.avvisade };
+function skrivSyntes(a: Arende, d: Pick<Syntes, 'sammanfattning' | 'nyckelinsikt' | 'oppet'>, meta: { valjare: Syntes['valjare']; bas_revision: number; modell?: string; anstrangning?: string; nedvaxlad_fran?: string; ms?: number; avvisade?: number }) {
+  a.syntes = { id: `S${a.revision}`, status: 'klar', bas_revision: meta.bas_revision, revision: a.revision, tid: nu(), valjare: meta.valjare, modell: meta.modell, anstrangning: meta.anstrangning, nedvaxlad_fran: meta.nedvaxlad_fran, ms: meta.ms, forsok: (a.syntes?.status === 'misslyckad' ? a.syntes.forsok : 0) + 1, sammanfattning: d.sammanfattning, nyckelinsikt: d.nyckelinsikt, oppet: d.oppet, avvisade: meta.avvisade };
 }
 
 /** Reservvägen: nästa fråga ur Digitalas standardlista (behov, följdregler, luckor); rundar av med samma regel som intervjuaren. */
@@ -862,7 +862,7 @@ function tillampaRegelstyrd(a: Arende, inledning?: string): string | null {
   return k.id;
 }
 
-interface Anropsutfall { svar: ModellSvar | null; fel?: ModellFel; forsok: number; tokens_in: number; tokens_out: number; kand_usd: number; okand_usd: number; ms: number; diagnostik: Record<string, unknown>[]; budgetStopp?: string }
+interface Anropsutfall { svar: ModellSvar | null; fel?: ModellFel; anstrangning?: string; nedvaxlad_fran?: string; forsok: number; tokens_in: number; tokens_out: number; kand_usd: number; okand_usd: number; ms: number; diagnostik: Record<string, unknown>[]; budgetStopp?: string }
 
 /** Ett modellkontrakt: turen (liten, snabb) eller syntesen (stor, en gång). Samma transport, olika schema och budget. */
 interface Kontrakt { slag: 'tur' | 'syntes'; system: string; anvandare: string; schema: object; schemaNamn: 'kundstart_tur' | 'kundstart_syntes'; maxTokens: number; omtagTokens: number; timeoutMs: number }
@@ -871,18 +871,22 @@ function turKontrakt(anvandare: string, prov: ProvVal | null): Kontrakt {
   return { slag: 'tur', system: turSystemText(), anvandare, schema: TUR_SCHEMA, schemaNamn: 'kundstart_tur', maxTokens: TUR_MAX_TOKENS, omtagTokens: TUR_MAX_TOKENS_OMTAG, timeoutMs: turTimeoutMs(prov?.anstrangning || 'low') };
 }
 
-function syntesKontrakt(anvandare: string): Kontrakt {
-  return { slag: 'syntes', system: syntesSystemText(), anvandare, schema: SYNTES_SCHEMA, schemaNamn: 'kundstart_syntes', maxTokens: SYNTES_MAX_TOKENS, omtagTokens: SYNTES_MAX_TOKENS_OMTAG, timeoutMs: syntesTimeoutMs() };
+function syntesKontrakt(anvandare: string, prov: ProvVal | null): Kontrakt {
+  return { slag: 'syntes', system: syntesSystemText(), anvandare, schema: SYNTES_SCHEMA, schemaNamn: 'kundstart_syntes', maxTokens: SYNTES_MAX_TOKENS, omtagTokens: SYNTES_MAX_TOKENS_OMTAG, timeoutMs: syntesTimeoutMs(prov?.anstrangning) };
 }
 
 async function korModell(a: Arende, lage: AiLage, modell: string, k: Kontrakt, prov: ProvVal | null): Promise<Anropsutfall> {
   const start = Date.now();
   const ut: Anropsutfall = { svar: null, forsok: 0, tokens_in: 0, tokens_out: 0, kand_usd: 0, okand_usd: 0, ms: 0, diagnostik: [] };
   let maxTokens = k.maxTokens;
+  let anstrangning = prov?.anstrangning;
+  let timeoutMs = k.timeoutMs;
+  ut.anstrangning = anstrangning;
   for (let n = 0; n < 2; n++) {
     // Gateway: turen har 45 s inom funktionens 60 s; andra försöket bara när minst 25 s återstår och felet går att försöka om.
-    // claude -p: inget omtag för turen (standardlistan tar över), ett omtag för syntesen vid formfel (den är dyr att tappa).
-    if (n > 0 && (lage === 'claude-cli' ? !(k.slag === 'syntes' && ut.fel?.klass === 'format') : Date.now() - start > TUR_MS - 25_000)) break;
+    // claude -p: inget omtag för turen (standardlistan tar över); syntesen får ett omtag vid formfel (den är dyr att tappa) och,
+    // när tidsgränsen avbröt ett försök på high/xhigh/max, ett försök på NEDVAXLING i samma anrop (nedvaxlad_fran bokförs).
+    if (n > 0 && (lage === 'claude-cli' ? !(k.slag === 'syntes' && (ut.fel?.klass === 'format' || ut.nedvaxlad_fran)) : Date.now() - start > TUR_MS - 25_000)) break;
     const tecken = k.system.length + k.anvandare.length;
     let res: { ok: true; id: string; usd: number } | null = null;
     if (lage === 'gateway') {
@@ -895,12 +899,12 @@ async function korModell(a: Arende, lage: AiLage, modell: string, k: Kontrakt, p
     try {
       const svar = lage === 'gateway'
         ? await viaGateway({ modell, system: k.system, anvandare: k.anvandare, schemaNamn: k.schemaNamn, schema: k.schema, maxTokens, timeoutMs: Math.min(40_000, Math.max(5_000, TUR_MS - (Date.now() - start))) })
-        : await viaClaudeCli({ modell, system: k.system, anvandare: k.anvandare, schemaNamn: k.schemaNamn, schema: k.schema, maxTokens, timeoutMs: k.timeoutMs, anstrangning: prov?.anstrangning });
+        : await viaClaudeCli({ modell, system: k.system, anvandare: k.anvandare, schemaNamn: k.schemaNamn, schema: k.schema, maxTokens, timeoutMs, anstrangning });
       const kostnad = svar.kostnad_usd ?? (lage === 'gateway' ? kostnadUrToken(modell, svar.tokens_in, svar.tokens_out) : null);
       if (res) await avrakna(res.id, kostnad, res.usd);
       ut.tokens_in += svar.tokens_in; ut.tokens_out += svar.tokens_out;
       if (kostnad !== null) ut.kand_usd += kostnad;
-      ut.diagnostik.push({ forsok: n + 1, slag: k.slag, ...svar.diagnos, tokens_in: svar.tokens_in, tokens_out: svar.tokens_out, kostnad_usd: kostnad, ms: Date.now() - start });
+      ut.diagnostik.push({ forsok: n + 1, slag: k.slag, anstrangning, ...svar.diagnos, tokens_in: svar.tokens_in, tokens_out: svar.tokens_out, kostnad_usd: kostnad, ms: Date.now() - start });
       ut.svar = svar;
       break;
     } catch (e) {
@@ -910,10 +914,13 @@ async function korModell(a: Arende, lage: AiLage, modell: string, k: Kontrakt, p
       if (kostnad !== null) ut.kand_usd += kostnad; else if (res) ut.okand_usd += res.usd;
       ut.tokens_in += f.tokens_in; ut.tokens_out += f.tokens_out;
       ut.fel = f;
-      ut.diagnostik.push({ forsok: n + 1, slag: k.slag, felklass: f.klass, ...f.diagnos, tokens_in: f.tokens_in, tokens_out: f.tokens_out, kostnad_usd: kostnad, ms: Date.now() - start });
+      ut.diagnostik.push({ forsok: n + 1, slag: k.slag, anstrangning, felklass: f.klass, ...f.diagnos, tokens_in: f.tokens_in, tokens_out: f.tokens_out, kostnad_usd: kostnad, ms: Date.now() - start });
       if (f.klass === 'avkortat') maxTokens = k.omtagTokens;
       const delay = Number(f.diagnos.retry_after || 0);
-      if (!f.retry || delay > 2) break;
+      const nedvaxling = lage === 'claude-cli' && k.slag === 'syntes' && f.klass === 'transport' && f.diagnos.avbrutet === true && nedvaxlas(anstrangning) && !ut.nedvaxlad_fran;
+      if (nedvaxling) {
+        ut.nedvaxlad_fran = anstrangning; anstrangning = NEDVAXLING; timeoutMs = syntesTimeoutMs(NEDVAXLING); ut.anstrangning = anstrangning;
+      } else if (!f.retry || delay > 2) break;
       if (delay) await new Promise((r) => setTimeout(r, Math.min(2000, delay * 1000)));
     }
   }
@@ -1207,7 +1214,7 @@ export async function syntes(id: string, opts: { igen?: boolean } = {}): Promise
     if (!kan(a)) { upptaget = true; return null; }
     const p = a.ai.pagaende;
     if (p && Date.parse(p.till) > Date.now()) { upptaget = true; return null; }
-    a.ai.pagaende = { id: lasId, till: new Date(Date.now() + (lage === 'claude-cli' ? syntesTimeoutMs() : LAS_MS) + 15_000).toISOString() };
+    a.ai.pagaende = { id: lasId, till: new Date(Date.now() + (lage === 'claude-cli' ? syntesTimeoutMs(prov?.anstrangning) + (nedvaxlas(prov?.anstrangning) ? syntesTimeoutMs(NEDVAXLING) : 0) : LAS_MS) + 15_000).toISOString() };
     return a;
   });
   if (upptaget) return { a: las.data, utford: false, fallback: false, vantar: Boolean(las.data.ai.pagaende) && kan(las.data) };
@@ -1220,7 +1227,7 @@ export async function syntes(id: string, opts: { igen?: boolean } = {}): Promise
       tackning: tackning(forsta).map((x) => ({ nyckel: x.nyckel, status: x.status, fraga: x.fraga, prio: x.prio })),
       utlosta: forsta.foljdregler_utlosta.map((u) => `${u.regel} (${u.fraga_id}: "${u.traff}")`),
     });
-    const utfall = await korModell(forsta, lage, modell, syntesKontrakt(kontext.text), prov);
+    const utfall = await korModell(forsta, lage, modell, syntesKontrakt(kontext.text, prov), prov);
     korning = utfall;
     let ut: SyntesUtdata | null = null;
     let valideringsfel: string | undefined;
@@ -1246,10 +1253,10 @@ export async function syntes(id: string, opts: { igen?: boolean } = {}): Promise
       bump(a);
       if (ut) {
         const tillampat = tillampaSyntes(a, ut, bas, modell);
-        skrivSyntes(a, { sammanfattning: ut.sammanfattning, nyckelinsikt: ut.nyckelinsikt, oppet: ut.oppet }, { valjare: 'ai', bas_revision: bas, modell, anstrangning: prov?.anstrangning, ms: utfall.ms, avvisade: ut.avvisade.length });
+        skrivSyntes(a, { sammanfattning: ut.sammanfattning, nyckelinsikt: ut.nyckelinsikt, oppet: ut.oppet }, { valjare: 'ai', bas_revision: bas, modell, anstrangning: utfall.anstrangning ?? prov?.anstrangning, nedvaxlad_fran: utfall.nedvaxlad_fran, ms: utfall.ms, avvisade: ut.avvisade.length });
         a.ai.aktuell = 'aktiv';
         if (fasAv(a) === 'avslut') sattFas(a, 'granskning', 'ai');
-        handelse(a, 'syntes', { lage, modell, ...(prov ? { anstrangning: prov.anstrangning } : {}), id: a.syntes!.id, bas_revision: bas, ms: utfall.ms, forsok: utfall.forsok, tokens_in: utfall.tokens_in, tokens_out: utfall.tokens_out, kostnad_usd: utfall.kand_usd, tillampat, avvisade: ut.avvisade.length ? ut.avvisade : undefined });
+        handelse(a, 'syntes', { lage, modell, ...(prov ? { anstrangning: utfall.anstrangning ?? prov.anstrangning, ...(utfall.nedvaxlad_fran ? { nedvaxlad_fran: utfall.nedvaxlad_fran } : {}) } : {}), id: a.syntes!.id, bas_revision: bas, ms: utfall.ms, forsok: utfall.forsok, tokens_in: utfall.tokens_in, tokens_out: utfall.tokens_out, kostnad_usd: utfall.kand_usd, tillampat, avvisade: ut.avvisade.length ? ut.avvisade : undefined });
       } else {
         const n = (a.syntes?.status === 'misslyckad' ? a.syntes.forsok : 0) + 1;
         a.ai.aktuell = utfall.budgetStopp ? 'pausad' : 'reserv';
@@ -1261,7 +1268,7 @@ export async function syntes(id: string, opts: { igen?: boolean } = {}): Promise
           if (fasAv(a) === 'avslut') sattFas(a, 'granskning', 'regelstyrd');
           handelse(a, 'syntes', { lage: 'regelstyrd', fallback: true, felklass, forsok: n, id: a.syntes!.id, bas_revision: bas });
         } else {
-          a.syntes = { id: `S${a.revision}`, status: 'misslyckad', bas_revision: a.syntes?.bas_revision ?? bas, revision: a.revision, tid: nu(), valjare: 'ai', modell, anstrangning: prov?.anstrangning, ms: utfall.ms, forsok: n, fel: felklass, sammanfattning: a.syntes?.sammanfattning || '', nyckelinsikt: a.syntes?.nyckelinsikt || '', oppet: a.syntes?.oppet || [] };
+          a.syntes = { id: `S${a.revision}`, status: 'misslyckad', bas_revision: a.syntes?.bas_revision ?? bas, revision: a.revision, tid: nu(), valjare: 'ai', modell, anstrangning: utfall.anstrangning ?? prov?.anstrangning, nedvaxlad_fran: utfall.nedvaxlad_fran, ms: utfall.ms, forsok: n, fel: felklass, sammanfattning: a.syntes?.sammanfattning || '', nyckelinsikt: a.syntes?.nyckelinsikt || '', oppet: a.syntes?.oppet || [] };
           handelse(a, 'syntes_fel', { felklass, forsok: n, ms: utfall.ms, skal: utfall.budgetStopp, valideringsfel });
         }
       }

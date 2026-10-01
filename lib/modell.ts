@@ -139,6 +139,9 @@ export function tolkaCliFel(rc: number | null, ut: string, felUt: string, modell
   return new ModellFel(standard, standard === 'format', { lage: 'claude-cli', rc });
 }
 
+/** Hårt tak för ett claude -p-anrop (bara lokalt testläge): syntesen på max kan behöva mer än fem minuter (2026-10-01). */
+const CLI_TAK_MS = 1_500_000;
+
 export async function viaClaudeCli(b: Begaran): Promise<ModellSvar> {
   if (process.env.VERCEL) throw new ModellFel('atkomst', false, { skal: 'claude-cli är bara för lokala prov' });
   const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV };
@@ -159,7 +162,7 @@ export async function viaClaudeCli(b: Begaran): Promise<ModellSvar> {
     const t = setTimeout(() => {
       p.kill('SIGTERM');
       reject(new ModellFel('transport', false, { avbrutet: true }));
-    }, Math.min(b.timeoutMs, 300_000));
+    }, Math.min(b.timeoutMs, CLI_TAK_MS));
     p.stdout.on('data', (d: Buffer) => (ut += d.toString()));
     p.stderr.on('data', (d: Buffer) => (felUt += d.toString()));
     p.on('error', () => {

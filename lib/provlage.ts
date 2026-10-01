@@ -104,12 +104,30 @@ export function provVy(): ProvVy {
   return { ...v, namn: modellNamn(v.modell), modeller: MODELLER.map((m) => ({ ...m })), nivaer: [...NIVAER], syntes: { ...s, namn: modellNamn(s.modell) } };
 }
 
-/** Hur länge en tur får ta: högre ansträngning tänker längre. */
-export function turTimeoutMs(anstrangning: string): number {
-  return anstrangning === 'max' || anstrangning === 'xhigh' ? 300_000 : anstrangning === 'high' ? 240_000 : 170_000;
+/** Provens egen skalning av tidsgränserna: bara kärnproven sätter KUNDSTART_TIDSGRANS_MS, så att avbrott och nedväxling kan prövas på sekunder. */
+function tidsgrans(ms: number): number {
+  const t = Number(process.env.KUNDSTART_TIDSGRANS_MS);
+  return Number.isFinite(t) && t > 0 ? t : ms;
 }
 
-/** Sammanfattningen läser hela intervjun och citerar ordagrant; taket är transportens hårda gräns. */
-export function syntesTimeoutMs(): number {
-  return 300_000;
+/** Hur länge en tur får ta: högre ansträngning tänker längre (Opus 5.5 på max mätt 2026-10-01: 70–248 s per tur). */
+export function turTimeoutMs(anstrangning: string): number {
+  return tidsgrans(anstrangning === 'max' || anstrangning === 'xhigh' ? 420_000 : anstrangning === 'high' ? 300_000 : 170_000);
+}
+
+/**
+ * Sammanfattningen läser hela intervjun och citerar ordagrant; på high/xhigh/max tänker modellen länge (Opus 5.5 på max
+ * avbröts vid 300 s 2026-10-01). Tidsgränsen följer ansträngningen; avbryts ett försök på en sådan nivå görs ett försök
+ * till på NEDVAXLING i samma anrop (lib/arende.ts korModell), bokfört som nedväxling.
+ */
+export function syntesTimeoutMs(anstrangning: string = NEDVAXLING): number {
+  return tidsgrans(anstrangning === 'max' || anstrangning === 'xhigh' ? 900_000 : anstrangning === 'high' ? 600_000 : 300_000);
+}
+
+/** Ansträngningen syntesen växlar ned till när tidsgränsen avbrutit ett försök (medium mätt till 57 s 2026-10-01). */
+export const NEDVAXLING = 'medium';
+
+/** Nivåer vars syntes får ett försök till på NEDVAXLING efter ett avbrott. */
+export function nedvaxlas(anstrangning: string | undefined): boolean {
+  return anstrangning === 'high' || anstrangning === 'xhigh' || anstrangning === 'max';
 }

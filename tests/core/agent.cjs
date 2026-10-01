@@ -616,7 +616,9 @@ test('Testlägets val: listorna, privat fil, syntesens eget val, oläsbar fil sk
     assert.throws(() => P.sparaProv('claude-opus-5', 'low'), /går inte att läsa/);
     assert.equal(fs.readFileSync(fil, 'utf8'), '{trasig', 'en oläsbar fil skrivs aldrig över');
     assert.deepEqual(P.lasProv(), { modell: 'claude-opus-5-5', anstrangning: 'max' }, 'oläsbar fil ger standardvalet');
-    assert.equal(P.turTimeoutMs('low'), 170000); assert.equal(P.turTimeoutMs('max'), 300000); assert.equal(P.syntesTimeoutMs(), 300000);
+    assert.equal(P.turTimeoutMs('low'), 170000); assert.equal(P.turTimeoutMs('high'), 300000); assert.equal(P.turTimeoutMs('max'), 420000);
+    assert.equal(P.syntesTimeoutMs(), 300000); assert.equal(P.syntesTimeoutMs('high'), 600000); assert.equal(P.syntesTimeoutMs('max'), 900000); assert.equal(P.syntesTimeoutMs('xhigh'), 900000);
+    assert.equal(P.NEDVAXLING, 'medium'); assert.equal(P.nedvaxlas('max'), true); assert.equal(P.nedvaxlas('medium'), false); assert.equal(P.nedvaxlas(undefined), false);
     fs.rmSync(fil);
     process.env.KUNDSTART_AI = 'claude-cli';
     assert.equal(P.provTillatet(), true);
@@ -662,6 +664,7 @@ test('claude -p i testläget: bara modell och ansträngning ur listorna som flag
     'for a in "$@"; do printf \'%s\\n\' "$a"; done > "$PROV_UT.args"',
     'env > "$PROV_UT.env"',
     'cat > /dev/null',
+    'if [ -n "$PROV_SOMN" ] && grep -qx max "$PROV_UT.args"; then sleep "$PROV_SOMN"; fi',
     'if [ -n "$PROV_KVOT" ]; then printf \'%s\\n\' "You\'ve reached your Opus limit. Switch to another model…" >&2; exit 1; fi',
     'if grep -q sammanfattning "$PROV_UT.args"; then printf \'{"structured_output":{"sammanfattning":"Ni driver en cykelverkstad.","nyckelinsikt":"Bokning.","uppgifter":[],"behov":[],"tillval":[],"tackning":[],"research":[],"oppet":[]},"usage":{"input_tokens":3,"output_tokens":2,"cache_read_input_tokens":40,"cache_creation_input_tokens":0},"total_cost_usd":0.01}\'; exit 0; fi',
     'printf \'{"structured_output":{"aterkoppling":"Ni vill boka.","fraga":{"text":"Vilka tjänster?","nyckel":"bokning_tjanster","behov_id":"","omrade":"C","varfor":"x"},"tackning":[],"klar":false,"vagvisning":false},"usage":{"input_tokens":3,"output_tokens":2,"cache_read_input_tokens":40,"cache_creation_input_tokens":0},"total_cost_usd":0.01}\'',
@@ -698,6 +701,21 @@ test('claude -p i testläget: bara modell och ansträngning ur listorna som flag
     assert.equal(A.fasAv(b), 'granskning'); assert.equal(b.syntes.valjare, 'ai'); assert.equal(b.syntes.modell, 'claude-opus-5-5'); assert.equal(b.syntes.anstrangning, 'high');
     assert.equal(b.syntes.sammanfattning, 'Ni driver en cykelverkstad.');
     assert.equal(b.ai.diagnostik.at(-1).cache_read, 40, 'cacheträffar bokförs');
+    // Tidsgränsen avbröt syntesen på max (den falska binären sover på max; provet skalar gränserna till 1,5 s): ett försök till
+    // på medium i samma anrop, bokfört som nedväxling i syntesen, händelsen och diagnostiken; kunden når granskningen.
+    process.env.KUNDSTART_TIDSGRANS_MS = '1500'; process.env.PROV_SOMN = '4';
+    require('../../lib/provlage.ts').sparaProv('claude-sonnet-5', 'low', { modell: 'claude-opus-5-5', anstrangning: 'max' });
+    const e = await medSvar('claude-cli');
+    const t0 = Date.now();
+    const g = await tillGranskning(e.id);
+    assert(Date.now() - t0 < 10_000, 'nedväxlingen sker i samma anrop, utan att vänta ut en andra full tidsgräns');
+    assert.equal(A.fasAv(g), 'granskning'); assert.equal(g.syntes.valjare, 'ai'); assert.equal(g.syntes.anstrangning, 'medium'); assert.equal(g.syntes.nedvaxlad_fran, 'max');
+    const hs = g.handelser.filter((x) => x.typ === 'syntes').at(-1).detaljer;
+    assert.equal(hs.forsok, 2); assert.equal(hs.anstrangning, 'medium'); assert.equal(hs.nedvaxlad_fran, 'max');
+    assert.equal(g.ai.diagnostik.at(-2).felklass, 'transport'); assert.equal(g.ai.diagnostik.at(-2).avbrutet, true); assert.equal(g.ai.diagnostik.at(-2).anstrangning, 'max');
+    assert.equal(g.ai.diagnostik.at(-1).anstrangning, 'medium'); assert.equal(g.ai.aktuell, 'aktiv', 'ett lyckat andra försök är inte reservläge');
+    assert.equal(A.exportPaket(g).syntes.nedvaxlad_fran, 'max', 'exporten bär nedväxlingen');
+    delete process.env.KUNDSTART_TIDSGRANS_MS; delete process.env.PROV_SOMN;
     // Kvoten slut: turen faller till standardlistan utan paus, med modellen i beskedet; nästa lyckade anrop nollställer.
     process.env.PROV_KVOT = '1';
     const c = await medSvar('claude-cli');
@@ -711,7 +729,7 @@ test('claude -p i testläget: bara modell och ansträngning ur listorna som flag
     d = await A.lasArende(c.id);
     assert.equal(d.ai.kvot, null, 'ett lyckat anrop nollställer kvotbeskedet');
   } finally {
-    delete process.env.PROV_UT; delete process.env.PROV_KVOT; process.env.KUNDSTART_AI = 'gateway';
+    delete process.env.PROV_UT; delete process.env.PROV_KVOT; delete process.env.PROV_SOMN; delete process.env.KUNDSTART_TIDSGRANS_MS; process.env.KUNDSTART_AI = 'gateway';
     for (const [k, v] of Object.entries(fore)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
     fs.rmSync(dir, { recursive: true, force: true });
   }
