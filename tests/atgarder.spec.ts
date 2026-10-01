@@ -5,6 +5,9 @@ import { aktuellFraga, borja, internHuvud, lasOchLamnaIn, oppna, oppnaAvsnitt, s
 const evidence = process.env.KUNDSTART_EVIDENS;
 
 test('Vikskär: naturlig rättelse, tidig inlämning, säker HTML och returfråga i samma ärende', async ({page,request,baseURL}, info) => {
+  // Provet tar ~2 min mot det delade testlagret (signallistan det bläddrar igenom växer för varje körning) och slog i den
+  // ordinarie budgeten 120 s under samtidig last 2026-10-01; slow() tredubblar budgeten.
+  test.slow();
   const bas = baseURL!;
   const a = await skapaArende(request,bas,'Vikskär Bildrum åtgärdsprov',[
     {nyckel:'erbjudande',varde:'Porträtt 45 minuter, 1 800 kr inklusive moms',status:'kunden uppger',kalla:'äldre syntetiskt underlag',omrade:'A'},
