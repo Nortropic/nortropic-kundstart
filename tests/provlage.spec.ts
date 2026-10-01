@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { aktuellFraga, oppna, skapaArende } from './hjalp';
+import { aktuellFraga, borja, oppna, skapaArende } from './hjalp';
 
 // Modellvalet finns bara i det lokala testläget (KUNDSTART_AI=claude-cli, som förbättringspartnern). Proven här gör
 // inga modellanrop: öppningsfrågan är fast. Den vanliga sviten prövar att valet saknas utanför testläget.
@@ -18,6 +18,7 @@ test('testläget: modell och ansträngning väljs i skrivrutan och med /model oc
   test.skip(LAGE !== 'claude-cli', 'modellvalet finns bara i det lokala testläget');
   const a = await skapaArende(request, baseURL!, 'Testfirma Modellval', undefined, { ai: 'claude-cli' });
   await oppna(page, a.lank);
+  await borja(page);
   await aktuellFraga(page);
   expect((await installningar(page, { modell: 'claude-opus-5-5', anstrangning: 'low' })).status).toBe(200);
   try {
@@ -51,15 +52,15 @@ test('testläget: modell och ansträngning väljs i skrivrutan och med /model oc
     await falt.fill('/model gpt');
     await falt.press('ControlOrMeta+Enter');
     await expect(page.locator('.mv-status')).toHaveText(/^Okänd modell: gpt\./);
-    // Också "Vet inte" kör kommandot i stället för att spara det som svar.
     await falt.fill('/effort medium');
-    await page.getByRole('button', { name: 'Vet inte' }).first().click();
+    await falt.press('ControlOrMeta+Enter');
     await expect(page.locator('.mv-status')).toHaveText('Haiku 4.5 · medium gäller från nästa fråga.');
     await expect(falt).toHaveValue('');
     await expect(page.locator('.logg .kund')).toHaveCount(0);
 
     const las = await installningar(page);
     expect([las.status, las.data.modell, las.data.anstrangning]).toEqual([200, 'claude-haiku-4-5-20251001', 'medium']);
+    expect((las.data.syntes as { modell: string }).modell, 'syntesens eget val följer med').toBeTruthy();
     expect((await installningar(page, { modell: 'claude-opus-5', anstrangning: 'low' }, false)).status, 'utan ytans huvud').toBe(403);
     expect((await installningar(page, { modell: 'openai/gpt-5-mini', anstrangning: 'low' })).status, 'okänd modell').toBe(400);
   } finally {
@@ -72,6 +73,7 @@ test('utanför testläget finns ingen modellväljare och ingen inställningsväg
   test.skip(LAGE === 'claude-cli', 'gäller servrar utan testläget');
   const a = await skapaArende(request, baseURL!, 'Testfirma Ingen Modellväljare');
   await oppna(page, a.lank);
+  await borja(page);
   await aktuellFraga(page);
   await expect(page.getByRole('button', { name: /^Modell och ansträngning:/ })).toHaveCount(0);
   expect((await installningar(page)).status).toBe(404);

@@ -1,15 +1,14 @@
 import { expect, test } from '@playwright/test';
-import { aktuellFraga, hamtaSomSida, internHuvud, oppna, skapaArende, svara, tillbakaTillSamtalet, vantaPaNyFraga, vantaPaSparat, visaUppdrag } from './hjalp';
+import { aktuellFraga, berattaMer, borja, hamtaSomSida, internHuvud, lasOchLamnaIn, oppna, oppnaAvsnitt, skapaArende, svara, tillGranskning, vantaPaNyFraga, vantaPaSparat } from './hjalp';
 
-// Regelstyrt läge (ingen modell): samtalets mekanik, samma ärende i samtal och översikt, återupptagning, rättelse,
-// material, kundseparation och inlämning. Agentens modellturer provas i ai.spec.ts.
-test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, material, inlämning', () => {
+// Regelstyrt läge (ingen modell): samtalets mekanik, samma ärende i tråden och i granskningens översikt,
+// återupptagning, rättelse, material, kundseparation och inlämning. Intervjuarens modellturer provas i ai.spec.ts.
+test.describe('Kundstart – intervju, granskning, återupptagning, rättelse, material, inlämning', () => {
   test('bokningsbehov ger bokningsfrågor; informationsbehov med negation gör det inte', async ({ page, request, baseURL }) => {
     const bas = baseURL!;
     const a = await skapaArende(request, bas, 'Testsalong Bokning');
     await oppna(page, a.lank);
-    await expect(page.getByRole('heading', { name: /(Hej|God morgon|God kväll), Testsalong Bokning/ })).toBeVisible();
-    await expect(page.getByText('Det här vet vi redan')).toBeVisible();
+    await borja(page);
     const f1 = await aktuellFraga(page);
     expect(f1).toContain('Berätta med egna ord');
     await svara(page, 'Vi vill att kunder ska kunna boka tid direkt på hemsidan i stället för att ringa. Just nu skriver vi allt i en papperskalender.');
@@ -26,6 +25,7 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     const b = await skapaArende(request, bas, 'Testbyrå Information');
     await page.context().clearCookies();
     await oppna(page, b.lank);
+    await borja(page);
     const g1 = await aktuellFraga(page);
     await svara(page, 'Vi vill bara att folk ska hitta våra öppettider och adress och förstå vad vi gör. Inga bokningar via nätet, folk ringer.');
     let forraB = g1;
@@ -38,8 +38,9 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     expect(exB.foljdregler_negerade.some((r) => r.regel === 'bokning'), 'den negerade nämningen bokförs som negerad').toBe(true);
     expect(exB.omgangar.flatMap((o) => o.fragor).some((f) => /^BOK/.test(f.id)), 'inga BOK-följdfrågor för ett informationsbehov').toBe(false);
 
-    const paket = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as { schema: string; arende: { testdialog: boolean }; svar: { fraga_id: string; text: string }[]; omgangar: { svar_md: string }[]; foljdregler_utlosta: { regel: string }[] };
+    const paket = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as { schema: string; fas: string; arende: { testdialog: boolean }; svar: { fraga_id: string; text: string }[]; omgangar: { svar_md: string }[]; foljdregler_utlosta: { regel: string }[] };
     expect(paket.schema).toBe('kundstart-export/1');
+    expect(paket.fas).toBe('intervju');
     expect(paket.arende.testdialog).toBe(true);
     expect(paket.svar[0].fraga_id).toBe('AG1');
     expect(paket.svar[0].text).toContain('boka tid direkt på hemsidan');
@@ -47,14 +48,15 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     expect(paket.foljdregler_utlosta.some((r) => r.regel === 'bokning')).toBe(true);
   });
 
-  test('samtal och Ditt uppdrag visar samma ärende; rättelse i översikten vinner och syns efter omladdning', async ({ page, request, baseURL }) => {
+  test('tråden och granskningens översikt visar samma ärende; rättelse i översikten vinner och syns efter omladdning', async ({ page, request, baseURL }) => {
     const bas = baseURL!;
     const a = await skapaArende(request, bas, 'Testfirma Rättelse');
     await oppna(page, a.lank);
+    await borja(page);
     await aktuellFraga(page);
     await svara(page, 'Vi vill få fler förfrågningar om trädgårdsskötsel från villaägare.');
     await vantaPaNyFraga(page, 'Berätta med egna ord: vad gör ni, och vad vill ni att webbplatsen ska hjälpa er med?');
-    let uppdrag = await visaUppdrag(page);
+    let uppdrag = await tillGranskning(page);
     const mal = uppdrag.locator('#avsnitt-mal .bild-rad').first();
     await expect(mal.locator('.varde')).toContainText('fler förfrågningar om trädgårdsskötsel');
     await expect(mal.locator('.ursprung')).toContainText('Era ord');
@@ -72,13 +74,13 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     const samma = await page.evaluate(async () => (await fetch('/api/rattelse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nyckel: 'erbjudande', varde: 'Klippning och färgning. Skäggtrimning har vi slutat med.', idempotens: 'ratt-' + Math.random().toString(16).slice(2, 12) }) })).json());
     expect((samma as { ny: boolean }).ny).toBe(false);
     await page.reload();
-    uppdrag = await visaUppdrag(page);
+    uppdrag = await tillGranskning(page);
     await expect(uppdrag.locator('.bild-rad', { hasText: 'Vad ni erbjuder' }).locator('.varde')).toHaveText('Klippning och färgning. Skäggtrimning har vi slutat med.');
     const ex = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as { rattelser: { varde: string; tidigare: { typ: string } }[]; rattelser_fakta: { status: string }[] };
     expect(ex.rattelser.map((r) => r.varde)).toEqual(['Klippning och färgning. Skäggtrimning har vi slutat med.']);
     expect(ex.rattelser[0].tidigare.typ).toBe('forifylld');
     expect(ex.rattelser_fakta[0].status).toBe('kunden uppger');
-    await tillbakaTillSamtalet(page);
+    await berattaMer(page);
     await expect(page.locator('h2.fragetext').first()).toBeVisible();
   });
 
@@ -86,6 +88,7 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     const bas = baseURL!;
     const a = await skapaArende(request, bas, 'Testfirma Återupptagning');
     await oppna(page, a.lank);
+    await borja(page);
     const f1 = await aktuellFraga(page);
     await page.locator('textarea.svar-falt').first().fill('Ett svar som inte är skickat än');
     await expect(page.locator('.status.osparad').first()).toHaveText('Inte skickat än');
@@ -127,7 +130,9 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     const bas = baseURL!;
     const a = await skapaArende(request, bas, 'Testfirma Material');
     await oppna(page, a.lank);
-    const uppdrag = await visaUppdrag(page);
+    await borja(page);
+    const uppdrag = await tillGranskning(page);
+    await oppnaAvsnitt(uppdrag, 'Material (valfritt)');
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
     await uppdrag.locator('input[type=file]').setInputFiles({ name: 'logotyp.png', mimeType: 'image/png', buffer: png });
     await expect(uppdrag.locator('.material-lista li', { hasText: 'logotyp.png' })).toBeVisible({ timeout: 20_000 });
@@ -158,7 +163,9 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     const a = await skapaArende(request, bas, 'Kund A');
     const b = await skapaArende(request, bas, 'Kund B');
     await oppna(page, a.lank);
-    const uppdrag = await visaUppdrag(page);
+    await borja(page);
+    const uppdrag = await tillGranskning(page);
+    await oppnaAvsnitt(uppdrag, 'Material (valfritt)');
     await uppdrag.locator('input[type=file]').setInputFiles({ name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('hemligt för A') });
     await expect(uppdrag.locator('.material-lista li', { hasText: 'a.txt' })).toBeVisible({ timeout: 20_000 });
     const href = await uppdrag.locator('.material-lista li a').first().getAttribute('href');
@@ -170,6 +177,7 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     const lageB = JSON.parse((await sidaB.evaluate(async () => (await fetch('/api/lage')).text())) as string);
     expect(lageB.arende.kund.namn).toBe('Kund B');
     expect(lageB.material.length).toBe(0);
+    expect(lageB.fas).toBe('intro');
     const tillvalB = await sidaB.evaluate(async () => (await fetch('/api/tillval', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tillval: 'bokning', kundval: 'onskat', idempotens: 'kundb-tillval-01' }) })).json());
     expect((tillvalB as { vy: { arende: { kund: { namn: string } } } }).vy.arende.kund.namn, 'B:s val hamnar i B:s ärende').toBe('Kund B');
     const exA = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as { tillval: { id: string }[] };
@@ -179,6 +187,8 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     const sidaC = await ctxC.newPage();
     expect((await sidaC.request.get(bas + '/api/lage')).status()).toBe(401);
     expect((await sidaC.request.post(bas + '/api/tillval', { data: { tillval: 'bokning', kundval: 'onskat', idempotens: 'utan-kaka-01' } })).status()).toBe(401);
+    expect((await sidaC.request.post(bas + '/api/borja')).status()).toBe(401);
+    expect((await sidaC.request.post(bas + '/api/granska', { data: {} })).status()).toBe(401);
     await sidaC.goto(bas + '/samtal');
     await expect(sidaC).toHaveURL(/\/lank\?skal=session/);
     await sidaC.goto(bas + '/start#' + 'x'.repeat(43));
@@ -194,24 +204,32 @@ test.describe('Kundstart – samtal, Ditt uppdrag, återupptagning, rättelse, m
     await expect(page).toHaveURL(/\/lank\?skal=aterkallad/);
   });
 
-  test('inlämning bekräftar vad som lämnats och vad som händer, utan godkännande', async ({ page, request, baseURL }) => {
+  test('inlämning kräver genomläsning och samtycke; tacksidan säger vad som lämnats och vad som händer, utan godkännande', async ({ page, request, baseURL }) => {
     const bas = baseURL!;
     const a = await skapaArende(request, bas, 'Testfirma Inlämning');
     await oppna(page, a.lank);
+    await borja(page);
     await aktuellFraga(page);
     await svara(page, 'Vi vill få fler förfrågningar om trädgårdsskötsel från villaägare i Luleå.');
-    await page.getByRole('button', { name: 'lämna in det ni har hittills' }).click();
+    // Inlämning direkt ur intervjun vägras av servern: intervjun ska läsas igenom först.
+    const tidigt = await page.evaluate(async () => (await fetch('/api/inlamning', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotens: 'tidig-inlamning-01', samtycke: { version: 'samtycke/1', text: 'Jag har läst igenom min intervju och vill lämna den vidare till Nortropic.', bekraftat: true, transkript_last: true } }) })).status);
+    expect(tidigt).toBe(409);
+    await tillGranskning(page);
+    const felText = await page.evaluate(async () => (await fetch('/api/inlamning', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotens: 'fel-text-01', samtycke: { version: 'samtycke/1', text: 'Jag godkänner.', bekraftat: true, transkript_last: true } }) })).status);
+    expect(felText, 'fel samtyckestext').toBe(422);
+    await lasOchLamnaIn(page);
     await expect(page.getByRole('heading', { name: /Tack, Testfirma Inlämning/ })).toBeVisible();
     await expect(page.getByText('1 svar i samtalet')).toBeVisible();
     await expect(page.getByText('inte ett godkännande av en design')).toBeVisible();
     await expect(page.locator('main.samtal-yta').getByText('Inlämnat och sparat hos oss. Väntar på att hämtas av Digitala.', { exact: false })).toBeVisible();
     const lage = await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}`, { headers: internHuvud() })).json();
     expect(lage.inlamningar.length).toBe(1);
-    // Kunden vill berätta mer efter inlämningen; frågan som redan var öppen visas igen och ett nytt svar syns som ändring.
-    await page.getByRole('button', { name: 'Jag vill berätta mer' }).click();
-    await aktuellFraga(page);
+    expect(lage.inlamningar[0].samtycke.version).toBe('samtycke/1');
+    // Kunden vill berätta mer efter inlämningen; ett nytt svar syns som ändring i granskningen.
+    await berattaMer(page);
     await svara(page, 'Vi har också öppet på lördagar under våren.');
-    const oversikt = await visaUppdrag(page);
+    const oversikt = await tillGranskning(page);
     await expect(oversikt.locator('.uppdrag-status')).toContainText('Ni har ändrat något efter inlämningen');
+    await expect(page.getByRole('button', { name: 'Lämna in ändringarna' })).toBeVisible();
   });
 });
