@@ -110,6 +110,8 @@ test('Standardlistan rundar av vid frågegränsen med fast text och avslutsfråg
   assert.equal(V.tillVy(h).overforing, 'andrat_efter');
   const i = await A.lamnaIn(a.id, { idempotens: nyckel('IN'), samtycke: samtycke() });
   assert.equal(i.inlamningar.length, 2); assert.equal(A.fasAv(i), 'inlamnat');
+  // En export i det nya formatet kan sparas för Digitalas kompatibilitetskontroll (verktyg/kundstart.py).
+  if (process.env.KUNDSTART_EXPORT_UT) fs.writeFileSync(process.env.KUNDSTART_EXPORT_UT, JSON.stringify(A.exportPaket(i), null, 2));
 });
 
 test('Kunden kan avsluta själv; "berätta mer" öppnar samtalet igen, stänger avslutsfrågan och gör sammanfattningen inaktuell', async () => {
