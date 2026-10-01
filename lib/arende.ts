@@ -4,13 +4,13 @@
 // och översikten "Ditt uppdrag" är två vyer av samma dokument.
 import { BANK, grundFraga, luckor, regelFraga, rubrik, serUtSomHemlighet, utlosta } from './bank';
 import { hashaToken, nyToken, nyttId } from './atkomst';
-import { AGENT_SCHEMA, byggKontext, systemText, validera, type AgentUtdata, type Avvisad } from './agent';
-import { avrakna, granser, kostnadUrToken, maxKostnad, reservera } from './budget';
+import { SYNTES_SCHEMA, TUR_SCHEMA, byggSyntesKontext, byggTurKontext, syntesSystemText, turSystemText, valideraSyntes, valideraTur, type KandRad, type SyntesUtdata, type TurUtdata } from './agent';
+import { avrakna, kostnadUrToken, maxKostnad, reservera } from './budget';
 import { kontrolleraDoman, normaliseraDoman, type DomanKontroll } from './doman';
 import { lasDok, laggFil, skapaDok, taBortFil, uppdateraDok } from './lagring';
 import { MAX_ANTAL, MAX_TOTAL, extrahera } from './material';
 import { ModellFel, viaClaudeCli, viaGateway, type ModellSvar } from './modell';
-import { lasProv, provTillatet, turTimeoutMs, type ProvVal } from './provlage';
+import { lasProv, lasSyntesProv, provTillatet, syntesTimeoutMs, turTimeoutMs, type ProvVal } from './provlage';
 import { signalera } from './overlamning';
 import { samlaBehov, laggBehov, tackning, behovMedStatus } from './tackning';
 import { TILLVAL_IDS, annatId, arAnnat } from './tillval';
@@ -30,10 +30,13 @@ const MAX_SVAR_TECKEN = 4000;
 const MIN_MS_MELLAN_SVAR = 2000; // tidsstämplar har sekundupplösning; idempotensnyckeln är det egentliga skyddet
 const PAUS_EFTER_FEL = 3;
 const PAUS_MIN = 10;
-const AGENT_MAX_TOKENS = 6000;
-/** En agenttur (alla försök) ryms i /api/nasta:s maxDuration 60 s med marginal för slutskrivningen och domänkontrollen. */
+/** Turen är liten (återkoppling + fråga); syntesen bär alla noteringar och får vara stor. Omtaget bara efter faktisk avkortning. */
+const TUR_MAX_TOKENS = 2500;
+const TUR_MAX_TOKENS_OMTAG = 4000;
+const SYNTES_MAX_TOKENS = 12000;
+const SYNTES_MAX_TOKENS_OMTAG = 16000;
+/** En gatewaytur (alla försök) ryms i /api/nasta:s maxDuration 60 s med marginal för slutskrivningen och domänkontrollen. */
 const TUR_MS = 45_000;
-const AGENT_MAX_TOKENS_OMTAG = 10000;
 const LAS_MS = 80_000;
 const MAX_RESEARCH = 6;
 const MAX_ANNAT = 8;
@@ -669,8 +672,37 @@ function agentFragor(a: Arende): number {
   return a.fragor.filter((f) => f.status !== 'tackt').length;
 }
 
-/** Tillämpar agentens validerade handlingar i ärendet. Körs inuti en villkorad skrivning. */
-function tillampaAgent(a: Arende, ut: AgentUtdata, bas: number, modell?: string): { nyaUppgifter: number; tillval: number; rek: number; tackning: number; research: number; behov: number; fraga: string | null; klar: boolean } {
+/** Tillämpar en intervjutur: berörda nycklar, nästa fråga med återkoppling, eller avrundningen. Körs inuti en villkorad skrivning. */
+function tillampaTur(a: Arende, ut: TurUtdata, opts: { avsluta?: boolean } = {}): { fraga: string | null; klar: boolean; berorda: number } {
+  let berorda = 0;
+  const sista = a.svar[a.svar.length - 1];
+  for (const b of ut.berorda) {
+    const lista = (a.berorda ??= []);
+    const x = lista.find((y) => y.nyckel === b.nyckel);
+    if (x) {
+      if (x.lage === 'berord' && b.lage === 'tackt') { x.lage = 'tackt'; x.fraga_id = sista?.fraga_id || x.fraga_id; x.revision = a.revision; berorda++; }
+      continue;
+    }
+    lista.push({ nyckel: b.nyckel, lage: b.lage, fraga_id: sista?.fraga_id || '', revision: a.revision });
+    berorda++;
+  }
+  // Avslut godtas när inga viktiga områden står orörda (och samtalet inte är alldeles kort), vid frågegränsen, eller på kundens begäran.
+  const klar = Boolean(opts.avsluta) || (ut.klar && farAvrunda(a));
+  let fraga: string | null = null;
+  if (klar) {
+    fraga = stangSamtal(a, { meddelande: ut.aterkoppling, fragetext: ut.fraga?.text, valjare: 'ai' });
+  } else if (ut.fraga && ut.fraga.nyckel !== AVSLUT_FRAGA.nyckel) {
+    const n = nastaAgNr(a);
+    a.omgang += 1;
+    const f: Fraga = { id: `AG${n}`, omrade: ut.fraga.omrade, nyckel: ut.fraga.nyckel, text: ut.fraga.text, paverkar: ut.fraga.varfor || 'förståelsen av uppdraget', kalla: 'agent', typ: 'oppen', inledning: ut.aterkoppling || undefined, utlost_av: ut.fraga.behov_id ? `behov ${ut.fraga.behov_id}` : null, omgang: a.omgang, stalld: nu(), status: 'stalld', valjare: 'ai' };
+    a.fragor.push(f);
+    fraga = f.id;
+  }
+  return { fraga, klar, berorda };
+}
+
+/** Tillämpar syntesens validerade noteringar i ärendet (kundens ord, behov, tillval, täckning, research). Körs inuti en villkorad skrivning. */
+function tillampaSyntes(a: Arende, ut: SyntesUtdata, bas: number, modell?: string): { nyaUppgifter: number; tillval: number; rek: number; tackning: number; research: number; behov: number } {
   const rev = a.revision;
   const rattadEfter = (nyckel: string, r: number) => a.rattelser.some((x) => x.nyckel === nyckel && x.revision > r);
   let nyaUppgifter = 0;
@@ -738,20 +770,8 @@ function tillampaAgent(a: Arende, ut: AgentUtdata, bas: number, modell?: string)
     lista.push({ id: `R${rev}_${lista.length + 1}`, fraga: r.fraga, varfor: r.varfor, nyckel: r.nyckel || undefined, kalla_typ: r.kalla_typ, kalla_id: r.kalla_id, citat: r.citat, status: 'bestalld', revision: rev, tid: nu(), modell });
     research++;
   }
-  // Avslut godtas när inga viktiga områden står orörda (och samtalet inte är alldeles kort) eller när det redan är långt.
-  const klar = ut.klar && farAvrunda(a);
-  let fraga: string | null = null;
-  if (klar) {
-    fraga = stangSamtal(a, { meddelande: ut.aterkoppling, valjare: 'ai' });
-  } else if (ut.fraga) {
-    const n = Math.max(0, ...a.fragor.filter((f) => /^AG\d+$/.test(f.id)).map((f) => Number(f.id.slice(2)))) + 1;
-    a.omgang += 1;
-    const f: Fraga = { id: `AG${n}`, omrade: ut.fraga.omrade, nyckel: ut.fraga.nyckel, text: ut.fraga.text, paverkar: ut.fraga.varfor || 'förståelsen av uppdraget', kalla: 'agent', typ: ut.fraga.form, alternativ: ut.fraga.form === 'val' ? ut.fraga.alternativ : undefined, tillval: ut.fraga.form === 'tillval' ? ut.fraga.tillval : undefined, inledning: ut.aterkoppling || undefined, omgang: a.omgang, stalld: nu(), status: 'stalld', valjare: 'ai' };
-    a.fragor.push(f);
-    fraga = f.id;
-  }
   if (nyaUppgifter + tillval + tack + research > 0) signalera(a);
-  return { nyaUppgifter, tillval, rek, tackning: tack, research, behov, fraga, klar };
+  return { nyaUppgifter, tillval, rek, tackning: tack, research, behov };
 }
 
 function nastaAgNr(a: Arende): number {
@@ -834,14 +854,26 @@ function tillampaRegelstyrd(a: Arende, inledning?: string): string | null {
 
 interface Anropsutfall { svar: ModellSvar | null; fel?: ModellFel; forsok: number; tokens_in: number; tokens_out: number; kand_usd: number; okand_usd: number; ms: number; diagnostik: Record<string, unknown>[]; budgetStopp?: string }
 
-async function korAgent(a: Arende, lage: AiLage, modell: string, system: string, anvandare: string, prov: ProvVal | null): Promise<Anropsutfall> {
+/** Ett modellkontrakt: turen (liten, snabb) eller syntesen (stor, en gång). Samma transport, olika schema och budget. */
+interface Kontrakt { slag: 'tur' | 'syntes'; system: string; anvandare: string; schema: object; schemaNamn: 'kundstart_tur' | 'kundstart_syntes'; maxTokens: number; omtagTokens: number; timeoutMs: number }
+
+function turKontrakt(anvandare: string, prov: ProvVal | null): Kontrakt {
+  return { slag: 'tur', system: turSystemText(), anvandare, schema: TUR_SCHEMA, schemaNamn: 'kundstart_tur', maxTokens: TUR_MAX_TOKENS, omtagTokens: TUR_MAX_TOKENS_OMTAG, timeoutMs: turTimeoutMs(prov?.anstrangning || 'low') };
+}
+
+function syntesKontrakt(anvandare: string): Kontrakt {
+  return { slag: 'syntes', system: syntesSystemText(), anvandare, schema: SYNTES_SCHEMA, schemaNamn: 'kundstart_syntes', maxTokens: SYNTES_MAX_TOKENS, omtagTokens: SYNTES_MAX_TOKENS_OMTAG, timeoutMs: syntesTimeoutMs() };
+}
+
+async function korModell(a: Arende, lage: AiLage, modell: string, k: Kontrakt, prov: ProvVal | null): Promise<Anropsutfall> {
   const start = Date.now();
   const ut: Anropsutfall = { svar: null, forsok: 0, tokens_in: 0, tokens_out: 0, kand_usd: 0, okand_usd: 0, ms: 0, diagnostik: [] };
-  let maxTokens = AGENT_MAX_TOKENS;
+  let maxTokens = k.maxTokens;
   for (let n = 0; n < 2; n++) {
-    // Turen har 45 s inom funktionens 60 s. Andra försöket bara när minst 25 s återstår och felet går att försöka om.
-    if (n > 0 && (lage === 'claude-cli' || Date.now() - start > TUR_MS - 25_000)) break;
-    const tecken = system.length + anvandare.length;
+    // Gateway: turen har 45 s inom funktionens 60 s; andra försöket bara när minst 25 s återstår och felet går att försöka om.
+    // claude -p: inget omtag för turen (standardlistan tar över), ett omtag för syntesen vid formfel (den är dyr att tappa).
+    if (n > 0 && (lage === 'claude-cli' ? !(k.slag === 'syntes' && ut.fel?.klass === 'format') : Date.now() - start > TUR_MS - 25_000)) break;
+    const tecken = k.system.length + k.anvandare.length;
     let res: { ok: true; id: string; usd: number } | null = null;
     if (lage === 'gateway') {
       const forbrukat = (a.ai.kostnad_usd || 0) + (a.ai.okand_kostnad_usd || 0) + ut.kand_usd + ut.okand_usd;
@@ -852,13 +884,13 @@ async function korAgent(a: Arende, lage: AiLage, modell: string, system: string,
     ut.forsok++;
     try {
       const svar = lage === 'gateway'
-        ? await viaGateway({ modell, system, anvandare, schemaNamn: 'kundstart_agent', schema: AGENT_SCHEMA, maxTokens, timeoutMs: Math.min(40_000, TUR_MS - (Date.now() - start)) })
-        : await viaClaudeCli({ modell, system, anvandare, schemaNamn: 'kundstart_agent', schema: AGENT_SCHEMA, maxTokens, timeoutMs: turTimeoutMs(prov?.anstrangning || 'low'), anstrangning: prov?.anstrangning });
+        ? await viaGateway({ modell, system: k.system, anvandare: k.anvandare, schemaNamn: k.schemaNamn, schema: k.schema, maxTokens, timeoutMs: Math.min(40_000, Math.max(5_000, TUR_MS - (Date.now() - start))) })
+        : await viaClaudeCli({ modell, system: k.system, anvandare: k.anvandare, schemaNamn: k.schemaNamn, schema: k.schema, maxTokens, timeoutMs: k.timeoutMs, anstrangning: prov?.anstrangning });
       const kostnad = svar.kostnad_usd ?? (lage === 'gateway' ? kostnadUrToken(modell, svar.tokens_in, svar.tokens_out) : null);
       if (res) await avrakna(res.id, kostnad, res.usd);
       ut.tokens_in += svar.tokens_in; ut.tokens_out += svar.tokens_out;
       if (kostnad !== null) ut.kand_usd += kostnad;
-      ut.diagnostik.push({ forsok: n + 1, ...svar.diagnos, tokens_in: svar.tokens_in, tokens_out: svar.tokens_out, kostnad_usd: kostnad, ms: Date.now() - start });
+      ut.diagnostik.push({ forsok: n + 1, slag: k.slag, ...svar.diagnos, tokens_in: svar.tokens_in, tokens_out: svar.tokens_out, kostnad_usd: kostnad, ms: Date.now() - start });
       ut.svar = svar;
       break;
     } catch (e) {
@@ -868,8 +900,8 @@ async function korAgent(a: Arende, lage: AiLage, modell: string, system: string,
       if (kostnad !== null) ut.kand_usd += kostnad; else if (res) ut.okand_usd += res.usd;
       ut.tokens_in += f.tokens_in; ut.tokens_out += f.tokens_out;
       ut.fel = f;
-      ut.diagnostik.push({ forsok: n + 1, felklass: f.klass, ...f.diagnos, tokens_in: f.tokens_in, tokens_out: f.tokens_out, kostnad_usd: kostnad, ms: Date.now() - start });
-      if (f.klass === 'avkortat') maxTokens = AGENT_MAX_TOKENS_OMTAG;
+      ut.diagnostik.push({ forsok: n + 1, slag: k.slag, felklass: f.klass, ...f.diagnos, tokens_in: f.tokens_in, tokens_out: f.tokens_out, kostnad_usd: kostnad, ms: Date.now() - start });
+      if (f.klass === 'avkortat') maxTokens = k.omtagTokens;
       const delay = Number(f.diagnos.retry_after || 0);
       if (!f.retry || delay > 2) break;
       if (delay) await new Promise((r) => setTimeout(r, Math.min(2000, delay * 1000)));
@@ -879,22 +911,54 @@ async function korAgent(a: Arende, lage: AiLage, modell: string, system: string,
   return ut;
 }
 
+/** Bokför ett modellanrop i ärendet: antal, token, kostnad/listpris, fel i rad, paus och kvot. Körs inuti en villkorad skrivning. */
+function bokforAnrop(a: Arende, utfall: Anropsutfall | null, lyckat: boolean, felklass: string | undefined, raknaFel: boolean, modell: string) {
+  if (!utfall) return;
+  a.ai.anrop += utfall.forsok;
+  a.ai.tokens_in += utfall.tokens_in;
+  a.ai.tokens_out += utfall.tokens_out;
+  a.ai.kostnad_usd = Math.round(((a.ai.kostnad_usd || 0) + utfall.kand_usd) * 1e8) / 1e8;
+  a.ai.okand_kostnad_usd = Math.round(((a.ai.okand_kostnad_usd || 0) + utfall.okand_usd) * 1e8) / 1e8;
+  a.ai.senaste_ms = utfall.ms;
+  a.ai.diagnostik = utfall.diagnostik;
+  if (lyckat) { a.ai.modell = modell; a.ai.senaste_lyckade = nu(); a.ai.fel_i_rad = 0; a.ai.kvot = null; return; }
+  if (!raknaFel) return;
+  a.ai.fel += 1;
+  a.ai.senaste_fel = felklass;
+  a.ai.senaste_fel_tid = nu();
+  if (utfall.fel?.klass === 'kvot') {
+    // Kvoten gäller en modell: botemedlet är att byta modell i skrivrutan, inte att vänta ut en paus. Inget fel i rad.
+    const d = utfall.fel.diagnos;
+    a.ai.kvot = { modell: String(d.modell || modell), aterstalls: d.aterstalls ? String(d.aterstalls) : undefined, besked: String(d.besked || '').slice(0, 120), tid: nu() };
+    return;
+  }
+  a.ai.fel_i_rad = (a.ai.fel_i_rad || 0) + 1;
+  if (a.ai.fel_i_rad >= PAUS_EFTER_FEL) { a.ai.paus_till = new Date(Date.now() + PAUS_MIN * 60_000).toISOString(); a.ai.fel_i_rad = 0; }
+}
+
+/** Känt utöver samtalet: förifyllt, rättelser, kundens ord ur syntesen och tolkningar (svaren står redan i SAMTALET). */
+function kandaRader(a: Arende, medSvar = false): KandRad[] {
+  return bild(a).filter((b) => medSvar || !(b.typ === 'kund' && b.kalla.startsWith('kundens svar'))).map((b) => ({ nyckel: b.nyckel, varde: b.varde, status: b.status, kalla: b.typ === 'kund' ? 'kunden' : b.typ === 'ai' ? 'vår tolkning' : b.kalla }));
+}
+
 /**
  * Nästa steg i samtalet. Idempotent: en redan ställd fråga returneras utan modellanrop. Ett modellanrop per ärende åt
  * gången (lås i ärendet), budgeten reserveras före varje anrop och modellens innehåll kasseras om kunden hunnit ändra
  * något under väntan (kostnaden bokförs ändå). Vid fel, paus eller slut budget tar standardlistan över, synligt.
+ * {fortsatt:true} öppnar ett avslutat samtal igen; {avsluta:true} låter intervjuaren avrunda på kundens begäran.
  */
-export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Promise<NastaResultat> {
+export async function nasta(id: string, opts: { fortsatt?: boolean; avsluta?: boolean } = {}): Promise<NastaResultat> {
   let forsta = await lasArende(id);
   if (!forsta) throw new Vagrad('ärendet finns inte', 404);
   const vila = (a: Arende, extra: Partial<NastaResultat> = {}): NastaResultat => {
     const fr = a.fragor.filter((f) => f.status === 'stalld');
     return { a, fragor: fr, klar: fr.length === 0 && Boolean(a.samtal_klar), meddelande: '', ai: { lage: a.ai.lage, anvand: false, fallback: false }, ...extra };
   };
-  /** Intervjun går vidare bara i intervjufasen utan öppen fråga, eller på kundens "berätta mer" (då får avslutsfrågan stå öppen). */
+  /** Intervjun går vidare bara i intervjufasen utan öppen fråga, på kundens "berätta mer" (avslutsfrågan får stå öppen) eller på kundens avslut (den öppna frågan skjuts upp). */
   const kanGaVidare = (a: Arende) => {
     const oppna = a.fragor.filter((f) => f.status === 'stalld');
     const fas = fasAv(a);
+    if (opts.avsluta) return fas === 'intervju' && !oppna.some((f) => f.roll === 'avslut');
     if (oppna.length && !(opts.fortsatt && oppna.every((f) => f.roll === 'avslut'))) return false;
     if (fas === 'intro') return false;
     if (fas !== 'intervju' && !opts.fortsatt) return false;
@@ -925,6 +989,11 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
       sattFas(a, 'intervju', 'kund');
       handelse(a, 'samtal_fortsatt', {});
     }
+    if (opts.avsluta) {
+      // Kundens eget avslut: en obesvarad fråga skjuts upp (kan tas upp i granskningen); intervjuaren får ordet för avrundningen.
+      bump(a);
+      for (const f of a.fragor) if (f.status === 'stalld') { f.status = 'senare'; handelse(a, 'senare', { fraga_id: f.id, skal: 'kunden avslutade intervjun' }); }
+    }
     return a;
   });
   if (upptaget) return vila(las.data, { vantar: !las.data.fragor.some((f) => f.status === 'stalld') && fasAv(las.data) === 'intervju' });
@@ -936,50 +1005,36 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
     const modell = prov ? prov.modell : forsta.ai.modell && lage === 'gateway' ? forsta.ai.modell : standardModell();
 
     let utfall: Anropsutfall | null = null;
-    let ut: AgentUtdata | null = null;
-    let avvisade: Avvisad[] = [];
+    let ut: TurUtdata | null = null;
     let valideringsfel: string | undefined;
     if (lage !== 'regelstyrd') {
-      const kontext = byggKontext(forsta, {
-        kanda: bild(forsta).map((b) => ({ nyckel: b.nyckel, varde: b.varde, status: b.status, kalla: b.typ === 'kund' ? 'kunden' : b.typ === 'ai' ? 'vår tolkning' : b.kalla })),
-        tackning: tackning(forsta).map((t) => ({ nyckel: t.nyckel, status: t.status, fraga: t.fraga, prio: t.prio })),
-        utlosta: forsta.foljdregler_utlosta.map((u) => `${u.regel} (${u.fraga_id}: "${u.traff}")`),
-        aterstarAnrop: Math.max(0, Math.floor((granser().arende_usd - (forsta.ai.kostnad_usd || 0) - (forsta.ai.okand_kostnad_usd || 0)) / 0.01)),
+      const n = agentFragor(forsta);
+      const kontext = byggTurKontext(forsta, {
+        kanda: kandaRader(forsta),
+        tackning: tackning(forsta).map((x) => ({ nyckel: x.nyckel, status: x.status, fraga: x.fraga, prio: x.prio })),
+        farAvrunda: farAvrunda(forsta),
+        avrundaNu: Boolean(opts.avsluta) || n >= AVSLUT_EFTER_FRAGOR,
+        viktigaKvar: aterstar(forsta).viktiga,
+        vagvisning: n === Math.ceil(AVSLUT_EFTER_FRAGOR / 2),
+        maxFragor: AVSLUT_EFTER_FRAGOR,
       });
-      utfall = await korAgent(forsta, lage, modell, systemText(), kontext.text, prov);
+      utfall = await korModell(forsta, lage, modell, turKontrakt(kontext.text, prov), prov);
       korning = utfall;
       if (utfall.svar) {
-        ut = validera(utfall.svar.rå, kontext);
+        ut = valideraTur(utfall.svar.rå, kontext);
         if (!ut) valideringsfel = 'modellens svar saknade användbar fråga eller giltigt avslut';
-        avvisade = ut?.avvisade || [];
       }
     }
     const fallback = lage !== 'regelstyrd' && !ut;
     const felklass = utfall?.budgetStopp ? 'budget' : utfall?.fel?.klass || (valideringsfel ? 'sakligt_otillrackligt' : undefined);
 
     let forkastad = false;
-    let tillampat: ReturnType<typeof tillampaAgent> | null = null;
+    let tillampat: ReturnType<typeof tillampaTur> | null = null;
     const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
       forkastad = false;
       tillampat = null;
       if (a.ai.pagaende?.id === lasId) a.ai.pagaende = null;
-      if (utfall) {
-        a.ai.anrop += utfall.forsok;
-        a.ai.tokens_in += utfall.tokens_in;
-        a.ai.tokens_out += utfall.tokens_out;
-        a.ai.kostnad_usd = Math.round(((a.ai.kostnad_usd || 0) + utfall.kand_usd) * 1e8) / 1e8;
-        a.ai.okand_kostnad_usd = Math.round(((a.ai.okand_kostnad_usd || 0) + utfall.okand_usd) * 1e8) / 1e8;
-        a.ai.senaste_ms = utfall.ms;
-        a.ai.diagnostik = utfall.diagnostik;
-        if (utfall.svar && ut) { a.ai.modell = modell; a.ai.senaste_lyckade = nu(); a.ai.fel_i_rad = 0; }
-        else if (utfall.fel || valideringsfel) {
-          a.ai.fel += 1;
-          a.ai.fel_i_rad = (a.ai.fel_i_rad || 0) + 1;
-          a.ai.senaste_fel = felklass;
-          a.ai.senaste_fel_tid = nu();
-          if (a.ai.fel_i_rad >= PAUS_EFTER_FEL) { a.ai.paus_till = new Date(Date.now() + PAUS_MIN * 60_000).toISOString(); a.ai.fel_i_rad = 0; }
-        }
-      }
+      bokforAnrop(a, utfall, Boolean(utfall?.svar && ut), felklass, Boolean(utfall?.fel || valideringsfel), modell);
       a.ai.felklass = felklass;
       a.ai.budget_skal = utfall?.budgetStopp;
       a.ai.aktuell = lage === 'regelstyrd' ? (skal ? 'pausad' : 'av') : utfall?.budgetStopp ? 'pausad' : fallback ? 'reserv' : 'aktiv';
@@ -993,13 +1048,15 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
       bump(a);
       let fragaId: string | null = null;
       if (ut) {
-        tillampat = tillampaAgent(a, ut, basRevision, modell);
+        tillampat = tillampaTur(a, ut, { avsluta: opts.avsluta });
         fragaId = tillampat.fraga;
         if (!fragaId && !tillampat.klar) fragaId = tillampaRegelstyrd(a, ut.aterkoppling || undefined);
+      } else if (opts.avsluta) {
+        fragaId = stangSamtal(a, { meddelande: avslutstextRegelstyrd(a), valjare: 'kund' });
       } else {
         fragaId = tillampaRegelstyrd(a);
       }
-      handelse(a, 'nasta', { lage: ut ? lage : 'regelstyrd', ...(prov && ut ? { modell, anstrangning: prov.anstrangning } : {}), fallback, skal: skal || utfall?.budgetStopp, felklass, fraga: fragaId, klar: Boolean(a.samtal_klar), ms: utfall?.ms, forsok: utfall?.forsok, tokens_in: utfall?.tokens_in, tokens_out: utfall?.tokens_out, kostnad_usd: utfall?.kand_usd, okand_usd: utfall?.okand_usd, tillampat, avvisade: avvisade.length ? avvisade : undefined, valideringsfel });
+      handelse(a, 'nasta', { lage: ut ? lage : 'regelstyrd', slag: opts.avsluta ? 'avslut' : 'tur', ...(prov && ut ? { modell, anstrangning: prov.anstrangning } : {}), fallback, skal: skal || utfall?.budgetStopp, felklass, fraga: fragaId, klar: Boolean(a.samtal_klar), ms: utfall?.ms, forsok: utfall?.forsok, tokens_in: utfall?.tokens_in, tokens_out: utfall?.tokens_out, kostnad_usd: utfall?.kand_usd, okand_usd: utfall?.okand_usd, berorda: tillampat?.berorda, vagvisning: ut?.vagvisning, valideringsfel });
       return a;
     });
     const a = await efterkontrolleraDoman(r.data).catch(() => r.data);
@@ -1052,8 +1109,18 @@ export async function borja(id: string): Promise<{ a: Arende; ny: boolean }> {
   return { a: r.data, ny };
 }
 
-/** Kunden avslutar intervjun själv: en obesvarad fråga skjuts upp (kan tas upp i granskningen) och samtalet rundas av. */
-export async function avsluta(id: string): Promise<{ a: Arende; ny: boolean }> {
+/** Kunden avslutar intervjun själv. Med en aktiv intervjuare får den ordet för avrundningen; annars rundas av med fast text. */
+export async function avsluta(id: string): Promise<{ a: Arende; ny: boolean; vantar?: boolean }> {
+  const forsta = await lasArende(id);
+  if (!forsta) throw new Vagrad('ärendet finns inte', 404);
+  if (fasAv(forsta) !== 'intervju') return { a: forsta, ny: false };
+  const lage = effektivtLage(forsta.ai.lage);
+  const pausad = Boolean(forsta.ai.paus_till && Date.parse(forsta.ai.paus_till) > Date.now());
+  if (lage !== 'regelstyrd' && forsta.ai.anrop < MAX_AI_ANROP && !pausad) {
+    const r = await nasta(id, { avsluta: true });
+    if (fasAv(r.a) === 'avslut') return { a: r.a, ny: true };
+    if (r.vantar || r.forkastad) return { a: r.a, ny: false, vantar: true };
+  }
   let ny = false;
   const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
     ny = false;
@@ -1084,29 +1151,124 @@ export async function granska(id: string, opts: { igen?: boolean } = {}): Promis
 }
 
 /**
- * Sammanfattningen efter avslutad intervju. Idempotent: en aktuell sammanfattning skrivs inte om utan `igen`. I det
- * modellfria läget sammanställs kundens egna svar deterministiskt.
+ * Sammanfattningen efter avslutad intervju: en modellkörning (claude-cli lokalt, gateway när den är påslagen) som
+ * skriver den berättande sammanfattningen och tillämpar noteringarna, eller en deterministisk sammanställning i det
+ * modellfria läget och som reserv efter upprepade fel. Idempotent: en aktuell sammanfattning skrivs inte om utan `igen`.
+ * Ett modellanrop åt gången per ärende; ett svar som kommer efter en nyare revision kasseras (klienten försöker igen).
  */
 export async function syntes(id: string, opts: { igen?: boolean } = {}): Promise<SyntesResultat> {
-  const forsta = await lasArende(id);
+  let forsta = await lasArende(id);
   if (!forsta) throw new Vagrad('ärendet finns inte', 404);
-  const fas = fasAv(forsta);
-  const tillaten = fas === 'avslut' || (opts.igen && (fas === 'granskning' || fas === 'inlamnat'));
-  if (!tillaten || forsta.fragor.some((f) => f.status === 'stalld')) return { a: forsta, utford: false, fallback: false };
+  const kan = (a: Arende) => {
+    const fas = fasAv(a);
+    return (fas === 'avslut' || (Boolean(opts.igen) && (fas === 'granskning' || fas === 'inlamnat'))) && !a.fragor.some((f) => f.status === 'stalld');
+  };
+  if (!kan(forsta)) return { a: forsta, utford: false, fallback: false };
   if (!opts.igen && forsta.syntes?.status === 'klar' && forsta.syntes.bas_revision >= kundRevision(forsta)) {
-    if (fas !== 'avslut') return { a: forsta, utford: false, fallback: false };
+    if (fasAv(forsta) !== 'avslut') return { a: forsta, utford: false, fallback: false };
     const r = await uppdateraDok<Arende>(arendeStig(id), (a) => { if (fasAv(a) !== 'avslut') return null; bump(a); sattFas(a, 'granskning', 'kund'); return a; });
     return { a: r.data, utford: false, fallback: false };
   }
-  const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
-    const bas = a.revision;
-    bump(a);
-    skrivSyntes(a, syntesRegelstyrd(a), { valjare: 'regelstyrd', bas_revision: bas });
-    if (fasAv(a) === 'avslut') sattFas(a, 'granskning', 'kund');
-    handelse(a, 'syntes', { lage: 'regelstyrd', id: a.syntes!.id, bas_revision: bas });
+  let lage: AiLage = effektivtLage(forsta.ai.lage);
+  const aktivtLage = lage;
+  const misslyckade = forsta.syntes?.status === 'misslyckad' ? forsta.syntes.forsok : 0;
+  if (lage !== 'regelstyrd' && (forsta.ai.anrop >= MAX_AI_ANROP || misslyckade >= PAUS_EFTER_FEL)) lage = 'regelstyrd';
+  if (lage !== 'regelstyrd' && forsta.ai.paus_till && Date.parse(forsta.ai.paus_till) > Date.now()) lage = 'regelstyrd';
+  if (lage === 'regelstyrd') {
+    const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+      if (!kan(a)) return null;
+      const bas = a.revision;
+      bump(a);
+      skrivSyntes(a, syntesRegelstyrd(a), { valjare: 'regelstyrd', bas_revision: bas });
+      if (aktivtLage !== 'regelstyrd') a.ai.aktuell = 'reserv';
+      if (fasAv(a) === 'avslut') sattFas(a, 'granskning', 'regelstyrd');
+      handelse(a, 'syntes', { lage: 'regelstyrd', fallback: aktivtLage !== 'regelstyrd', id: a.syntes!.id, bas_revision: bas });
+      return a;
+    });
+    return { a: r.data, utford: true, fallback: aktivtLage !== 'regelstyrd' };
+  }
+
+  const prov = lage === 'claude-cli' ? lasSyntesProv() : null;
+  const modell = prov ? prov.modell : forsta.ai.modell && lage === 'gateway' ? forsta.ai.modell : standardModell();
+  const lasId = 'las_' + Math.random().toString(36).slice(2, 12);
+  let upptaget = false;
+  const las = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+    upptaget = false;
+    if (!kan(a)) { upptaget = true; return null; }
+    const p = a.ai.pagaende;
+    if (p && Date.parse(p.till) > Date.now()) { upptaget = true; return null; }
+    a.ai.pagaende = { id: lasId, till: new Date(Date.now() + (lage === 'claude-cli' ? syntesTimeoutMs() : LAS_MS) + 15_000).toISOString() };
     return a;
   });
-  return { a: r.data, utford: true, fallback: false };
+  if (upptaget) return { a: las.data, utford: false, fallback: false, vantar: Boolean(las.data.ai.pagaende) && kan(las.data) };
+  let korning: Anropsutfall | null = null;
+  try {
+    forsta = las.data;
+    const bas = forsta.revision;
+    const kontext = byggSyntesKontext(forsta, {
+      kanda: kandaRader(forsta, true),
+      tackning: tackning(forsta).map((x) => ({ nyckel: x.nyckel, status: x.status, fraga: x.fraga, prio: x.prio })),
+      utlosta: forsta.foljdregler_utlosta.map((u) => `${u.regel} (${u.fraga_id}: "${u.traff}")`),
+    });
+    const utfall = await korModell(forsta, lage, modell, syntesKontrakt(kontext.text), prov);
+    korning = utfall;
+    let ut: SyntesUtdata | null = null;
+    let valideringsfel: string | undefined;
+    if (utfall.svar) {
+      ut = valideraSyntes(utfall.svar.rå, kontext);
+      if (!ut) valideringsfel = 'modellens sammanfattning gick inte att använda';
+    }
+    const felklass = utfall.budgetStopp ? 'budget' : utfall.fel?.klass || (valideringsfel ? 'sakligt_otillrackligt' : undefined);
+    let forkastad = false;
+    let fallback = false;
+    const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+      forkastad = false;
+      fallback = false;
+      if (a.ai.pagaende?.id === lasId) a.ai.pagaende = null;
+      bokforAnrop(a, utfall, Boolean(utfall.svar && ut), felklass, Boolean(utfall.fel || valideringsfel), modell);
+      a.ai.felklass = felklass;
+      a.ai.budget_skal = utfall.budgetStopp;
+      if (a.revision !== bas || !kan(a)) {
+        forkastad = true;
+        handelse(a, 'syntes_forkastad', { skal: 'ärendet ändrades under modellväntan; inget gammalt modellinnehåll används', ms: utfall.ms, kostnad_usd: utfall.kand_usd });
+        return a;
+      }
+      bump(a);
+      if (ut) {
+        const tillampat = tillampaSyntes(a, ut, bas, modell);
+        skrivSyntes(a, { sammanfattning: ut.sammanfattning, nyckelinsikt: ut.nyckelinsikt, oppet: ut.oppet }, { valjare: 'ai', bas_revision: bas, modell, anstrangning: prov?.anstrangning, ms: utfall.ms, avvisade: ut.avvisade.length });
+        a.ai.aktuell = 'aktiv';
+        if (fasAv(a) === 'avslut') sattFas(a, 'granskning', 'ai');
+        handelse(a, 'syntes', { lage, modell, ...(prov ? { anstrangning: prov.anstrangning } : {}), id: a.syntes!.id, bas_revision: bas, ms: utfall.ms, forsok: utfall.forsok, tokens_in: utfall.tokens_in, tokens_out: utfall.tokens_out, kostnad_usd: utfall.kand_usd, tillampat, avvisade: ut.avvisade.length ? ut.avvisade : undefined });
+      } else {
+        const n = (a.syntes?.status === 'misslyckad' ? a.syntes.forsok : 0) + 1;
+        a.ai.aktuell = utfall.budgetStopp ? 'pausad' : 'reserv';
+        if (n >= PAUS_EFTER_FEL) {
+          // Reserv efter upprepade fel: kunden når granskningen med en deterministisk sammanställning av sina egna ord.
+          skrivSyntes(a, syntesRegelstyrd(a), { valjare: 'regelstyrd', bas_revision: bas });
+          a.syntes!.forsok = n;
+          fallback = true;
+          if (fasAv(a) === 'avslut') sattFas(a, 'granskning', 'regelstyrd');
+          handelse(a, 'syntes', { lage: 'regelstyrd', fallback: true, felklass, forsok: n, id: a.syntes!.id, bas_revision: bas });
+        } else {
+          a.syntes = { id: `S${a.revision}`, status: 'misslyckad', bas_revision: bas, revision: a.revision, tid: nu(), valjare: 'ai', modell, anstrangning: prov?.anstrangning, ms: utfall.ms, forsok: n, fel: felklass, sammanfattning: '', nyckelinsikt: '', oppet: [] };
+          handelse(a, 'syntes_fel', { felklass, forsok: n, ms: utfall.ms, skal: utfall.budgetStopp, valideringsfel });
+        }
+      }
+      return a;
+    });
+    const a = await efterkontrolleraDoman(r.data).catch(() => r.data);
+    return { a, utford: Boolean(ut) || fallback, fallback, forkastad, fel: felklass };
+  } catch (e) {
+    await uppdateraDok<Arende>(arendeStig(id), (a) => {
+      if (a.ai.pagaende?.id !== lasId) return null;
+      a.ai.pagaende = null;
+      if (korning) bokforAnrop(a, korning, false, 'fel', false, modell);
+      handelse(a, 'syntes_fel', { fel: e instanceof Error ? e.name : 'okant', kostnad_usd: korning?.kand_usd });
+      return a;
+    }).catch(() => undefined);
+    throw e;
+  }
 }
 
 // ---------- material ----------

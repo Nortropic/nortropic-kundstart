@@ -117,6 +117,28 @@ export async function viaGateway(b: Begaran): Promise<ModellSvar> {
  * i modellens sammanhang (går inte att stänga av med OAuth) och redovisas som känd begränsning. Förbrukningen räknas i
  * abonnemangets kvot, inte i USD; claude -p:s total_cost_usd är ett listprisvärde och bokförs bara som diagnos.
  */
+/** Kvotbesked från claude -p, t.ex. "You've hit your session limit · resets 14:00" eller "You've reached your Opus limit. Switch to another model…". */
+export const KVOT = /(?:hit|reached) your (?:(?<modell>[A-Z][A-Za-z0-9 .-]{1,29}?) )?(?:session |usage |weekly |daily )?limit(?:[^\n]{0,80}?[Rr]esets?(?: at)? (?<tid>\d{1,2}[:.]\d{2} ?(?:[ap]m)?))?/;
+
+/**
+ * Klassar ett fel från claude -p utan att spara råtexten: kvot (per modell; botemedlet är att byta modell), inloggning,
+ * vägran, annars transport eller form. Bara det matchade kvotbeskedet (CLI-text, aldrig kundtext) följer med som diagnos.
+ */
+export function tolkaCliFel(rc: number | null, ut: string, felUt: string, modell: string, standard: 'transport' | 'format' = 'transport'): ModellFel {
+  let text = felUt;
+  try {
+    const d = JSON.parse(ut) as { is_error?: boolean; result?: string };
+    if (d?.is_error) text = String(d.result || '') + '\n' + felUt;
+  } catch {
+    text = ut.slice(-2000) + '\n' + felUt;
+  }
+  const kvot = KVOT.exec(text);
+  if (kvot) return new ModellFel('kvot', false, { lage: 'claude-cli', modell: kvot.groups?.modell?.trim() || modell, aterstalls: kvot.groups?.tid, besked: kvot[0].slice(0, 120) });
+  if (/not logged in|unauthori[sz]ed|invalid api key|please run \/login|authentication/i.test(text)) return new ModellFel('atkomst', false, { lage: 'claude-cli', skal: 'inloggning' });
+  if (/refus|safety|classifier/i.test(text)) return new ModellFel('vagran', false, { lage: 'claude-cli' });
+  return new ModellFel(standard, standard === 'format', { lage: 'claude-cli', rc });
+}
+
 export async function viaClaudeCli(b: Begaran): Promise<ModellSvar> {
   if (process.env.VERCEL) throw new ModellFel('atkomst', false, { skal: 'claude-cli är bara för lokala prov' });
   const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV };
@@ -133,25 +155,29 @@ export async function viaClaudeCli(b: Begaran): Promise<ModellSvar> {
   return await new Promise((resolve, reject) => {
     const p = spawn('claude', args, { env, cwd: tmpdir(), stdio: 'pipe' });
     let ut = '';
+    let felUt = '';
     const t = setTimeout(() => {
       p.kill('SIGTERM');
       reject(new ModellFel('transport', false, { avbrutet: true }));
     }, Math.min(b.timeoutMs, 300_000));
     p.stdout.on('data', (d: Buffer) => (ut += d.toString()));
+    p.stderr.on('data', (d: Buffer) => (felUt += d.toString()));
     p.on('error', () => {
       clearTimeout(t);
       reject(new ModellFel('atkomst', false, { skal: 'claude-kommandot saknas' }));
     });
     p.on('close', (kod: number | null) => {
       clearTimeout(t);
-      if (kod !== 0) return reject(new ModellFel('transport', false, { rc: kod }));
+      if (kod !== 0) return reject(tolkaCliFel(kod, ut, felUt, b.modell));
       try {
         const d = JSON.parse(ut) as { structured_output?: unknown; result?: string; is_error?: boolean; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }; total_cost_usd?: number };
-        if (d.is_error || d.structured_output === undefined) return reject(new ModellFel('format', true, { lage: 'claude-cli' }));
+        if (d.is_error) return reject(tolkaCliFel(kod, ut, felUt, b.modell, 'format'));
+        if (d.structured_output === undefined) return reject(new ModellFel('format', true, { lage: 'claude-cli' }));
         const u = d.usage || {};
-        resolve({ rå: d.structured_output, tokens_in: (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0), tokens_out: u.output_tokens || 0, kostnad_usd: null, diagnos: { lage: 'claude-cli', modell: b.modell, anstrangning: b.anstrangning || 'low', listpris_usd_ej_kostnad: d.total_cost_usd ?? null, ms: Date.now() - start } });
+        // cache_read/cache_write visar om promptcachen träffar (identisk systemprompt < 5 min mellan turer).
+        resolve({ rå: d.structured_output, tokens_in: (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0), tokens_out: u.output_tokens || 0, kostnad_usd: null, diagnos: { lage: 'claude-cli', modell: b.modell, anstrangning: b.anstrangning || 'low', listpris_usd_ej_kostnad: d.total_cost_usd ?? null, ms: Date.now() - start, cache_read: u.cache_read_input_tokens || 0, cache_write: u.cache_creation_input_tokens || 0 } });
       } catch {
-        reject(new ModellFel('format', false));
+        reject(new ModellFel('format', false, { lage: 'claude-cli' }));
       }
     });
     p.stdin.end(b.anvandare);

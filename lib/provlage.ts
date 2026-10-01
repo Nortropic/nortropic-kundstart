@@ -17,11 +17,13 @@ export const MODELLER = [
 export const NIVAER = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Niva = (typeof NIVAER)[number];
 
-/** Ett samtal behöver korta svarstider, därför låg ansträngning som standard; ägaren höjer i skrivrutan. */
-const STANDARD: { modell: string; anstrangning: Niva } = { modell: 'claude-opus-5-5', anstrangning: 'low' };
-
 export interface ProvVal { modell: string; anstrangning: Niva }
-export interface ProvVy extends ProvVal { namn: string; modeller: { id: string; namn: string; om: string }[]; nivaer: string[] }
+export interface ProvVy extends ProvVal { namn: string; modeller: { id: string; namn: string; om: string }[]; nivaer: string[]; syntes: ProvVal & { namn: string } }
+
+/** Ett samtal behöver korta svarstider, därför låg ansträngning som standard; ägaren höjer i skrivrutan. */
+const STANDARD: ProvVal = { modell: 'claude-opus-5-5', anstrangning: 'low' };
+/** Sammanfattningen görs en gång och bär alla ordagranna citat: mer ansträngning än turen, samma modell som standard. */
+const SYNTES_STANDARD: ProvVal = { modell: 'claude-opus-5-5', anstrangning: 'medium' };
 
 /** Testläget gäller bara den lokala servern som startats med KUNDSTART_AI=claude-cli, aldrig på Vercel. */
 export function provTillatet(): boolean {
@@ -49,35 +51,49 @@ function giltigt(d: unknown): Partial<ProvVal> {
   };
 }
 
-/** Ägarens val, eller standardvalet om filen saknas eller har okända värden. */
-export function lasProv(): ProvVal {
+function lasFil(): Record<string, unknown> | null {
   try {
-    const v = giltigt(JSON.parse(readFileSync(fil(), 'utf8')));
-    return { modell: v.modell || STANDARD.modell, anstrangning: v.anstrangning || STANDARD.anstrangning };
+    const d = JSON.parse(readFileSync(fil(), 'utf8'));
+    return d && typeof d === 'object' && !Array.isArray(d) ? (d as Record<string, unknown>) : null;
   } catch {
-    return { ...STANDARD };
+    return null;
   }
 }
 
-/** Sparar ett nytt val atomärt (0600) och lämnar filens övriga nycklar orörda. En oläsbar fil skrivs aldrig över. */
-export function sparaProv(modell: string, anstrangning: string): ProvVal {
+/** Ägarens val för turerna, eller standardvalet om filen saknas eller har okända värden. */
+export function lasProv(): ProvVal {
+  const v = giltigt(lasFil());
+  return { modell: v.modell || STANDARD.modell, anstrangning: v.anstrangning || STANDARD.anstrangning };
+}
+
+/** Ägarens val för sammanfattningen (syntes_modell, syntes_anstrangning i samma fil), annars standardvalet. */
+export function lasSyntesProv(): ProvVal {
+  const d = lasFil();
+  const v = giltigt(d ? { modell: d.syntes_modell, anstrangning: d.syntes_anstrangning } : null);
+  return { modell: v.modell || SYNTES_STANDARD.modell, anstrangning: v.anstrangning || SYNTES_STANDARD.anstrangning };
+}
+
+function kontrollera(modell: string, anstrangning: string) {
   if (!MODELLER.some((m) => m.id === modell)) throw new Error('okänd modell');
   if (!(NIVAER as readonly string[]).includes(anstrangning)) throw new Error('okänd ansträngning');
+}
+
+/** Sparar ett nytt val atomärt (0600) och lämnar filens övriga nycklar orörda. En oläsbar fil skrivs aldrig över. */
+export function sparaProv(modell: string, anstrangning: string, syntes?: { modell: string; anstrangning: string }): ProvVal {
+  kontrollera(modell, anstrangning);
+  if (syntes) kontrollera(syntes.modell, syntes.anstrangning);
   const dir = katalog();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
   let ovrigt: Record<string, unknown> = {};
   if (existsSync(fil())) {
-    try {
-      const d = JSON.parse(readFileSync(fil(), 'utf8'));
-      if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('form');
-      ovrigt = d as Record<string, unknown>;
-    } catch {
-      throw new Error('installningar.json går inte att läsa; rätta eller ta bort filen först');
-    }
+    const d = lasFil();
+    if (!d) throw new Error('installningar.json går inte att läsa; rätta eller ta bort filen först');
+    ovrigt = d;
   }
   const tmp = join(dir, '.installningar.json.tmp');
-  writeFileSync(tmp, JSON.stringify({ ...ovrigt, modell, anstrangning, andrad: new Date().toISOString() }, null, 1) + '\n', { mode: 0o600 });
+  const nytt = { ...ovrigt, modell, anstrangning, ...(syntes ? { syntes_modell: syntes.modell, syntes_anstrangning: syntes.anstrangning } : {}), andrad: new Date().toISOString() };
+  writeFileSync(tmp, JSON.stringify(nytt, null, 1) + '\n', { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, fil());
   return lasProv();
@@ -85,10 +101,16 @@ export function sparaProv(modell: string, anstrangning: string): ProvVal {
 
 export function provVy(): ProvVy {
   const v = lasProv();
-  return { ...v, namn: modellNamn(v.modell), modeller: MODELLER.map((m) => ({ ...m })), nivaer: [...NIVAER] };
+  const s = lasSyntesProv();
+  return { ...v, namn: modellNamn(v.modell), modeller: MODELLER.map((m) => ({ ...m })), nivaer: [...NIVAER], syntes: { ...s, namn: modellNamn(s.modell) } };
 }
 
 /** Hur länge en tur får ta: högre ansträngning tänker längre. */
 export function turTimeoutMs(anstrangning: string): number {
   return anstrangning === 'max' || anstrangning === 'xhigh' ? 300_000 : anstrangning === 'high' ? 240_000 : 170_000;
+}
+
+/** Sammanfattningen läser hela intervjun och citerar ordagrant; taket är transportens hårda gräns. */
+export function syntesTimeoutMs(): number {
+  return 300_000;
 }
