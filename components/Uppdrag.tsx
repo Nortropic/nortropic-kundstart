@@ -9,26 +9,27 @@ import { AnnatBehov, TillvalKort } from './Tillval';
 const STATUS: Record<string, string> = { inte_undersokt: 'ingen har berört det än', namnt: 'ni har nämnt det; detaljerna återstår', kunden_vet_inte: 'ni vet inte ännu', atkomst_saknas: 'åtkomst saknas', aterkom_senare: 'ni vill återkomma' };
 
 /**
- * Ditt uppdrag: samma ärende som samtalet, som översikt. Varje uppgift kan rättas här; rättelsen sparas i samma ärende
- * och står över äldre tolkningar. Kundens val, Digitalas rekommendationer och Digitalas status hålls isär.
+ * "Det vi har förstått": översikten i granskningen. Varje uppgift kan rättas här; rättelsen sparas i samma ärende
+ * och står över äldre tolkningar. Tillval och material är valfria, infällda avsnitt. Kundens val, Digitalas
+ * rekommendationer och Digitalas status hålls isär.
  */
-export default function Uppdrag({ vy, setVy, tillSamtalet }: { vy: Vy; setVy: (v: Vy) => void; tillSamtalet?: () => void }) {
+export default function Uppdrag({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void }) {
   const u = vy.uppdrag;
   const ovriga = vy.tillval.filter((t) => !t.kundval && !t.rekommendation);
   const avstatt = vy.tillval.filter((t) => t.kundval === 'inte_nu');
   return (
     <div className="uppdrag">
-      <h1 id="uppdrag-rubrik">Ditt uppdrag</h1>
+      <h2 id="uppdrag-rubrik">Det vi har förstått</h2>
       <p className="uppdrag-status">Senast ändrat {klockslag(vy.arende.uppdaterad)}. {vy.overlamning}</p>
 
       <section id="avsnitt-mal" className="avsnitt" aria-labelledby="rubrik-mal">
-        <h2 id="rubrik-mal">Det ni vill uppnå</h2>
+        <h3 id="rubrik-mal">Det ni vill uppnå</h3>
         {u.mal.length ? u.mal.map((r) => <Rad key={r.nyckel} rad={r} setVy={setVy} />) : <p className="tom">Växer fram när ni berättar i samtalet.</p>}
         {!u.mal.some((r) => r.nyckel === 'verksamhetsmal') && <NyUppgift nyckel="verksamhetsmal" etikett="Skriv målet själva" setVy={setVy} />}
       </section>
 
       <section id="avsnitt-forstatt" className="avsnitt" aria-labelledby="rubrik-forstatt">
-        <h2 id="rubrik-forstatt">Det vi har förstått om verksamheten</h2>
+        <h3 id="rubrik-forstatt">Det vi har förstått om verksamheten</h3>
         {u.forstatt.length === 0 && <p className="tom">Inget ännu. Här samlas det ni berättar, med era egna ord skilda från AI-stödets tolkningar.</p>}
         {u.forstatt.map((g) => (
           <div key={g.omrade || 'ovrigt'} className="grupp">
@@ -38,8 +39,8 @@ export default function Uppdrag({ vy, setVy, tillSamtalet }: { vy: Vy; setVy: (v
         ))}
       </section>
 
-      <section id="avsnitt-tillval" className="avsnitt" aria-labelledby="rubrik-tillval">
-        <h2 id="rubrik-tillval">Tillval</h2>
+      <details id="avsnitt-tillval" className="avsnitt avsnitt-infallt">
+        <summary>Tillval (valfritt)</summary>
         <p className="dis liten">Allt här är valfritt. Ett val är ett önskemål till Digitala, inte ett köp och inget tillstånd att ändra era konton.</p>
         <h3 className="grupp-rubrik">Valt av er</h3>
         {u.valda.length ? u.valda.map((t) => <TillvalKort key={t.id} t={t} setVy={setVy} />) : <p className="tom">Inga tillval valda ännu.</p>}
@@ -64,15 +65,15 @@ export default function Uppdrag({ vy, setVy, tillSamtalet }: { vy: Vy; setVy: (v
           })}
           <AnnatBehov setVy={setVy} />
         </details>
-      </section>
+      </details>
 
-      <section id="avsnitt-material" className="avsnitt" aria-labelledby="rubrik-material">
-        <h2 id="rubrik-material">Material</h2>
+      <details id="avsnitt-material" className="avsnitt avsnitt-infallt">
+        <summary>Material (valfritt)</summary>
         <Material vy={vy} setVy={setVy} />
-      </section>
+      </details>
 
       <section id="avsnitt-aterstar" className="avsnitt" aria-labelledby="rubrik-aterstar">
-        <h2 id="rubrik-aterstar">Det som återstår</h2>
+        <h3 id="rubrik-aterstar">Det som återstår</h3>
         {u.aterstar.length === 0 && u.research.length === 0 && u.senare.length === 0 && <p className="tom">Inga viktiga frågor står öppna just nu.</p>}
         {u.aterstar.length > 0 && (
           <ul className="aterstar-lista">
@@ -86,20 +87,19 @@ export default function Uppdrag({ vy, setVy, tillSamtalet }: { vy: Vy; setVy: (v
             <ul className="aterstar-lista">{u.research.map((r) => <li key={r.id}><span>{r.fraga}</span>{r.varfor ? <span className="meta"> {r.varfor}</span> : null}</li>)}</ul>
           </>
         )}
-        {u.senare.length > 0 && <Senare vy={vy} setVy={setVy} tillSamtalet={tillSamtalet} />}
+        {u.senare.length > 0 && <Senare vy={vy} setVy={setVy} />}
       </section>
     </div>
   );
 }
 
-function Senare({ vy, setVy, tillSamtalet }: { vy: Vy; setVy: (v: Vy) => void; tillSamtalet?: () => void }) {
+function Senare({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void }) {
   const [fel, setFel] = useState('');
   async function oppna(id: string) {
     try {
       const r = await anropa<{ ok: true; vy: Vy }>('/api/senare', { method: 'POST', body: JSON.stringify({ fraga_id: id, oppna: true }) });
       setVy(r.vy);
       setFel('');
-      tillSamtalet?.();
     } catch (e) {
       setFel((e as AnropsFel).message);
     }

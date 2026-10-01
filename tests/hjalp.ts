@@ -7,7 +7,7 @@ export const FAKTA_TESTDIALOG = [
 ];
 
 /** Funktionsproven skapar regelstyrda ärenden (deterministiska, inga modellanrop) även mot en server vars standard är
- *  gateway; modellen provas uttryckligen i ai.spec.ts genom `extra.ai`. */
+ *  gateway eller claude-cli; modellen provas uttryckligen i ai.spec.ts genom `extra.ai`. */
 export async function skapaArende(request: APIRequestContext, bas: string, namn: string, fakta = FAKTA_TESTDIALOG, extra: Record<string, unknown> = {}) {
   const r = await request.post(bas + '/api/intern/arenden', {
     headers: { Authorization: 'Bearer ' + INTERN_NYCKEL },
@@ -20,6 +20,13 @@ export async function skapaArende(request: APIRequestContext, bas: string, namn:
 export async function oppna(page: Page, lank: string) {
   await page.goto(lank);
   await page.waitForURL(/\/samtal$/);
+}
+
+/** Startskärmen: "Börja intervjun" ställer öppningsfrågan. Pågår intervjun redan väntar den bara in frågan. */
+export async function borja(page: Page) {
+  const knapp = page.getByRole('button', { name: 'Börja intervjun' });
+  if (await knapp.count()) await knapp.click();
+  await expect(page.locator('h2.fragetext').first()).toBeVisible({ timeout: 30_000 });
 }
 
 /** Skickar ett svar på den aktuella frågan och väntar på serverns bekräftelse. */
@@ -58,23 +65,46 @@ export async function vantaPaNyFraga(page: Page, forra: string) {
   return aktuellFraga(page);
 }
 
-/** Visar "Ditt uppdrag": bredvid samtalet på stor skärm, som ark på mobil. Returnerar översiktens behållare. */
-export async function visaUppdrag(page: Page): Promise<Locator> {
-  const knapp = page.locator('.uppdrag-knapp');
-  if (await knapp.isVisible()) {
-    await knapp.click();
-    await expect(page.locator('dialog.ark')).toBeVisible();
-    return page.locator('dialog.ark .uppdrag');
-  }
-  const aside = page.locator('aside.uppdrag-yta .uppdrag');
-  await expect(aside).toBeVisible();
-  return aside;
+/** Kunden avslutar intervjun via länken och bekräftelsen; väntar på avslutskortet (intervjuaren kan behöva avrunda). */
+export async function avsluta(page: Page) {
+  await page.getByRole('button', { name: 'Avsluta intervjun' }).click();
+  await page.getByRole('button', { name: 'Ja, avsluta' }).click();
+  await expect(page.locator('.aktuell.avslut')).toBeVisible({ timeout: 300_000 });
 }
 
-/** Stänger arket på mobil (ingen effekt på stor skärm). */
-export async function tillbakaTillSamtalet(page: Page) {
-  const tillbaka = page.getByRole('button', { name: 'Tillbaka till samtalet' });
-  if (await tillbaka.isVisible()) await tillbaka.click();
+/** Till granskningen: avslutar om intervjun pågår och går vidare till sammanfattningen. Returnerar översikten där. */
+export async function tillGranskning(page: Page): Promise<Locator> {
+  if ((await page.locator('.granskning').count()) === 0) {
+    if ((await page.locator('.aktuell.avslut').count()) === 0) await avsluta(page);
+    await page.getByRole('button', { name: /Gå vidare till sammanfattningen|Skicka och gå vidare/ }).click();
+  }
+  await expect(page.locator('.granskning')).toBeVisible({ timeout: 300_000 });
+  const u = page.locator('.granskning .uppdrag');
+  await expect(u).toBeVisible();
+  return u;
+}
+
+/** Öppnar ett infällt avsnitt i översikten ("Tillval (valfritt)", "Material (valfritt)") om det är stängt. */
+export async function oppnaAvsnitt(uppdrag: Locator, namn: string) {
+  const d = uppdrag.locator('details.avsnitt-infallt', { has: uppdrag.page().locator('summary', { hasText: namn }) });
+  if (!(await d.evaluate((el) => (el as HTMLDetailsElement).open))) await d.locator(':scope > summary').click();
+}
+
+/** Läser igenom (hoppar till slutet), kryssar i samtycket och lämnar in; väntar på tacksidan. */
+export async function lasOchLamnaIn(page: Page) {
+  await page.getByRole('button', { name: 'Hoppa till slutet av intervjun' }).click();
+  const ruta = page.getByRole('checkbox', { name: /Jag har läst igenom min intervju/ });
+  await expect(ruta).toBeEnabled();
+  await ruta.check();
+  await page.getByRole('button', { name: /^Lämna in( ändringarna)?$/ }).click();
+  await expect(page.locator('.tack')).toBeVisible({ timeout: 20_000 });
+}
+
+/** "Jag vill berätta mer" från avslutet, granskningen eller tacksidan; väntar på en öppen fråga i tråden. */
+export async function berattaMer(page: Page) {
+  if (await page.locator('.tack').count()) await page.getByRole('button', { name: 'Visa det ni lämnat' }).click();
+  await page.getByRole('button', { name: 'Jag vill berätta mer' }).click();
+  await expect(page.locator('h2.fragetext').first()).toBeVisible({ timeout: 90_000 });
 }
 
 export function internHuvud() {

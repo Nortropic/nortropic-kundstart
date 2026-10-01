@@ -47,6 +47,7 @@ export default defineConfig({
         reuseExistingServer: true,
         timeout: 60_000,
         // Proven får en egen katalog för testlägets modellval, så att de aldrig ändrar ägarens eget val.
-        env: { KUNDSTART_AI: process.env.KUNDSTART_AI || 'regelstyrd', KUNDSTART_PROV_DATA: process.env.KUNDSTART_PROV_DATA || '.scratch/prov-data' },
+        // KUNDSTART_AVSLUT_EFTER_FRAGOR kortar intervjun i verkliga modellprov (ai.spec.ts); tom = standard 14.
+        env: { KUNDSTART_AI: process.env.KUNDSTART_AI || 'regelstyrd', KUNDSTART_PROV_DATA: process.env.KUNDSTART_PROV_DATA || '.scratch/prov-data', KUNDSTART_AVSLUT_EFTER_FRAGOR: process.env.KUNDSTART_AVSLUT_EFTER_FRAGOR || '' },
       },
 });

@@ -34,6 +34,8 @@ export interface Fraga {
   alternativ?: string[];
   /** Agentens kundvända återkoppling före frågan (det den förstått), sparad så att samtalet kan visas igen. */
   inledning?: string;
+  /** Öppningsfrågan och avslutsfrågan (sista tankar) är samtalets ramar, inte bankämnen. */
+  roll?: 'oppning' | 'avslut';
   /** Tillval som visas som kontroller i frågan (typ 'tillval'). */
   tillval?: string[];
   omgang: number;
@@ -113,13 +115,46 @@ export interface AiTillstand {
   aktuell?: 'aktiv' | 'reserv' | 'pausad' | 'av';
   felklass?: string;
   diagnostik?: Record<string, unknown>[];
+  /** Modellens kvot är slut (claude-cli, per modell): botemedlet är att byta modell, inte att vänta ut en paus. */
+  kvot?: { modell: string; aterstalls?: string; besked: string; tid: string } | null;
 }
+
+/** Intervjuns faser: startskärm, samtalet, avrundning, genomläsning med sammanfattning, inlämnat. */
+export type Fas = 'intro' | 'intervju' | 'avslut' | 'granskning' | 'inlamnat';
+export interface FasByte { fran: Fas | null; till: Fas; tid: string; revision: number; av: 'kund' | 'ai' | 'regelstyrd' | 'digitala' }
+
+/** Guidens nyckel som en tur berört (nämnd, mer behövs) eller täckt (räcker för nästa arbetssteg). */
+export interface Berord { nyckel: string; lage: 'berord' | 'tackt'; fraga_id: string; revision: number }
+
+/** Sammanfattningen efter avslutad intervju: intervjuarens (ai) eller en deterministisk sammanställning (regelstyrd). */
+export interface Syntes {
+  id: string;
+  status: 'klar' | 'misslyckad' | 'inaktuell';
+  bas_revision: number;
+  revision: number;
+  tid: string;
+  valjare: 'ai' | 'regelstyrd';
+  modell?: string;
+  anstrangning?: string;
+  nedvaxlad_fran?: string; // syntesen avbröts på denna nivå och skrevs på NEDVAXLING (lib/provlage.ts)
+  ms?: number;
+  forsok: number;
+  fel?: string;
+  sammanfattning: string;
+  nyckelinsikt: string;
+  oppet: { nyckel: string; varfor: string }[];
+  avvisade?: number;
+}
+
+/** Kundens bekräftelse vid inlämning: exakt den text som visades, versionerad. transkript_last är klientens uppgift. */
+export interface Samtycke { version: 'samtycke/1'; text: string; tid: string; revision: number; syntes_id: string | null; transkript_last: true; idempotens: string }
 
 export interface Inlamning {
   tid: string;
   revision: number;
   svar: number;
   material: number;
+  samtycke?: Samtycke;
 }
 
 export interface Arende {
@@ -157,7 +192,14 @@ export interface Arende {
   /** Agentens täckningsmarkeringar för bankens områden: vet inte, inte tillämpligt, avstår. */
   tackning_agent?: TackningMarkering[];
   /** Samtalet avslutat av agenten (eller standardlistan) vid en viss revision; ny kundhandling kan öppna det igen. */
-  samtal_klar?: { revision: number; tid: string; meddelande: string; valjare: 'ai' | 'regelstyrd' } | null;
+  samtal_klar?: { revision: number; tid: string; meddelande: string; valjare: 'ai' | 'regelstyrd' | 'kund' } | null;
+  /** Intervjuns fas (intro → intervju → avslut → granskning → inlamnat). Äldre dokument saknar fältet och härleds (fasAv). */
+  fas?: Fas;
+  fas_historik?: FasByte[];
+  /** Guidens nycklar som turerna berört eller täckt enligt intervjuaren; styr avrundningen, inte exportens täckning. */
+  berorda?: Berord[];
+  /** Sammanfattningen efter avslutad intervju. */
+  syntes?: Syntes | null;
 }
 
 export interface Uppgift {

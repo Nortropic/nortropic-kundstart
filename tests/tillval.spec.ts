@@ -1,14 +1,16 @@
 import { expect, test } from '@playwright/test';
-import { aktuellFraga, internHuvud, oppna, skapaArende, tillbakaTillSamtalet, visaUppdrag } from './hjalp';
+import { aktuellFraga, borja, internHuvud, oppna, oppnaAvsnitt, skapaArende, svara, tillGranskning } from './hjalp';
 
 type Export = { tillval: { id: string; kundval: string | null; system?: string; kalla?: string; kontroll?: { doman: string; registrerad: boolean | null } | null; historik: unknown[] }[]; signal?: { id: string } };
 
-test('tillval i översikten: lägga till, ändra, ångra och eget behov följer med i exporten', async ({ page, request, baseURL }) => {
+test('tillval i granskningens översikt: lägga till, ändra, ångra och eget behov följer med i exporten', async ({ page, request, baseURL }) => {
   const bas = baseURL!;
   const a = await skapaArende(request, bas, 'Testfirma Tillval');
   await oppna(page, a.lank);
+  await borja(page);
   await aktuellFraga(page);
-  const uppdrag = await visaUppdrag(page);
+  const uppdrag = await tillGranskning(page);
+  await oppnaAvsnitt(uppdrag, 'Tillval (valfritt)');
   await expect(uppdrag.getByText('Inga tillval valda ännu.')).toBeVisible();
   await uppdrag.locator('summary', { hasText: 'Alla möjligheter' }).click();
   for (const namn of ['Egen domän', 'Formulär och bilagor', 'E-postmottagning', 'Bokning och kalender', 'Betalning eller deposition', 'Kundregister (CRM)', 'Nyhetsbrev', 'Redigera innehållet själva', 'Google Search Console', 'Google-företagsprofil', 'Google Ads', 'Meta-annonser (Facebook och Instagram)', 'Analys och mätning av förfrågningar']) {
@@ -31,7 +33,8 @@ test('tillval i översikten: lägga till, ändra, ångra och eget behov följer 
   await uppdrag.getByRole('button', { name: 'Lägg till' }).last().click();
   await expect(uppdrag.locator('.tillval-kort.valt', { hasText: 'Sälja presentkort' })).toBeVisible();
   await page.reload();
-  const igen = await visaUppdrag(page);
+  const igen = await tillGranskning(page);
+  await oppnaAvsnitt(igen, 'Tillval (valfritt)');
   await expect(igen.locator('.tillval-kort.valt', { hasText: 'Fortnox' })).toBeVisible();
   const ex = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as Export;
   const t = (id: string) => ex.tillval.find((x) => x.id === id)!;
@@ -44,8 +47,10 @@ test('domänflödet: befintlig domän kontrolleras i öppna uppgifter och sparas
   const bas = baseURL!;
   const a = await skapaArende(request, bas, 'Testfirma Domän');
   await oppna(page, a.lank);
+  await borja(page);
   await aktuellFraga(page);
-  const uppdrag = await visaUppdrag(page);
+  const uppdrag = await tillGranskning(page);
+  await oppnaAvsnitt(uppdrag, 'Tillval (valfritt)');
   await uppdrag.locator('summary', { hasText: 'Alla möjligheter' }).click();
   const doman = uppdrag.locator('.tillval-kort', { has: page.locator('.tv-namn', { hasText: 'Egen domän' }) });
   await doman.getByRole('button', { name: 'Vi har redan en domän' }).click();
@@ -62,35 +67,19 @@ test('domänflödet: befintlig domän kontrolleras i öppna uppgifter och sparas
   expect(intern, 'interna namn vägras').toBe(400);
 });
 
-test('mobilarket: Ditt uppdrag öppnas från sidhuvudet, stängs med Escape och fokus återgår', async ({ page, request, baseURL }, info) => {
-  test.skip(info.project.name !== 'mobil', 'arket gäller mobil layout');
-  const a = await skapaArende(request, baseURL!, 'Testfirma Ark');
+test('intervjun visar bara tråden och skrivrutan: inga paneler, val, kort eller knappar för att svara på annat sätt', async ({ page, request, baseURL }, info) => {
+  const a = await skapaArende(request, baseURL!, 'Testfirma Ren tråd');
   await oppna(page, a.lank);
-  await aktuellFraga(page);
-  const knapp = page.locator('.uppdrag-knapp');
-  await expect(knapp).toBeVisible();
-  await knapp.focus();
-  await page.keyboard.press('Enter');
-  await expect(page.locator('dialog.ark')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Ditt uppdrag' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Tillbaka till samtalet' })).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(page.locator('dialog.ark')).toBeHidden();
-  await expect(knapp).toBeFocused();
-  await visaUppdrag(page);
-  await tillbakaTillSamtalet(page);
+  await borja(page);
+  await svara(page, 'Vi är en cykelverkstad och vill att kunderna bokar service själva.');
   await expect(page.locator('h2.fragetext').first()).toBeVisible();
-  const bredd = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
-  expect(bredd, 'ingen horisontell rullning på mobil').toBe(true);
-});
-
-test('stor skärm: översikten står bredvid samtalet utan knapp', async ({ page, request, baseURL }, info) => {
-  test.skip(info.project.name !== 'dator', 'bredvid-layouten gäller stor skärm');
-  const a = await skapaArende(request, baseURL!, 'Testfirma Bredvid');
-  await oppna(page, a.lank);
-  await aktuellFraga(page);
-  await expect(page.locator('.uppdrag-knapp')).toHaveCount(0);
-  const samtal = await page.locator('main.samtal-yta').boundingBox();
-  const aside = await page.locator('aside.uppdrag-yta').boundingBox();
-  expect(samtal && aside && aside.x > samtal.x + samtal.width - 1, 'översikten till höger om samtalet').toBe(true);
+  for (const sel of ['.uppdrag', 'aside', 'dialog', '.alternativ', '.tillval-kort', '.uppdrag-knapp', '.sidopanel']) await expect(page.locator(sel), sel).toHaveCount(0);
+  for (const namn of ['Vet inte', 'Fler sätt att svara', 'Lämna material', 'Välj tillval', 'Ditt uppdrag']) await expect(page.getByRole('button', { name: namn }), namn).toHaveCount(0);
+  await expect(page.locator('textarea.svar-falt')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Skicka svar' })).toHaveCount(1);
+  await expect(page.locator('.komponera-hint')).toContainText('Vet inte, gäller inte er, eller vill ni återkomma?');
+  if (info.project.name === 'mobil') {
+    const bredd = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
+    expect(bredd, 'ingen horisontell rullning på mobil').toBe(true);
+  }
 });

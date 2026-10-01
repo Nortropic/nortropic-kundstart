@@ -17,11 +17,12 @@ export const MODELLER = [
 export const NIVAER = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type Niva = (typeof NIVAER)[number];
 
-/** Ett samtal behöver korta svarstider, därför låg ansträngning som standard; ägaren höjer i skrivrutan. */
-const STANDARD: { modell: string; anstrangning: Niva } = { modell: 'claude-opus-5-5', anstrangning: 'low' };
-
 export interface ProvVal { modell: string; anstrangning: Niva }
-export interface ProvVy extends ProvVal { namn: string; modeller: { id: string; namn: string; om: string }[]; nivaer: string[] }
+export interface ProvVy extends ProvVal { namn: string; modeller: { id: string; namn: string; om: string }[]; nivaer: string[]; syntes: ProvVal & { namn: string } }
+
+/** Ägarens beslut 2026-10-01: Opus 5.5 på max som standard för både turen och sammanfattningen; sänks i skrivrutan vid behov. */
+const STANDARD: ProvVal = { modell: 'claude-opus-5-5', anstrangning: 'max' };
+const SYNTES_STANDARD: ProvVal = { modell: 'claude-opus-5-5', anstrangning: 'max' };
 
 /** Testläget gäller bara den lokala servern som startats med KUNDSTART_AI=claude-cli, aldrig på Vercel. */
 export function provTillatet(): boolean {
@@ -49,35 +50,49 @@ function giltigt(d: unknown): Partial<ProvVal> {
   };
 }
 
-/** Ägarens val, eller standardvalet om filen saknas eller har okända värden. */
-export function lasProv(): ProvVal {
+function lasFil(): Record<string, unknown> | null {
   try {
-    const v = giltigt(JSON.parse(readFileSync(fil(), 'utf8')));
-    return { modell: v.modell || STANDARD.modell, anstrangning: v.anstrangning || STANDARD.anstrangning };
+    const d = JSON.parse(readFileSync(fil(), 'utf8'));
+    return d && typeof d === 'object' && !Array.isArray(d) ? (d as Record<string, unknown>) : null;
   } catch {
-    return { ...STANDARD };
+    return null;
   }
 }
 
-/** Sparar ett nytt val atomärt (0600) och lämnar filens övriga nycklar orörda. En oläsbar fil skrivs aldrig över. */
-export function sparaProv(modell: string, anstrangning: string): ProvVal {
+/** Ägarens val för turerna, eller standardvalet om filen saknas eller har okända värden. */
+export function lasProv(): ProvVal {
+  const v = giltigt(lasFil());
+  return { modell: v.modell || STANDARD.modell, anstrangning: v.anstrangning || STANDARD.anstrangning };
+}
+
+/** Ägarens val för sammanfattningen (syntes_modell, syntes_anstrangning i samma fil), annars standardvalet. */
+export function lasSyntesProv(): ProvVal {
+  const d = lasFil();
+  const v = giltigt(d ? { modell: d.syntes_modell, anstrangning: d.syntes_anstrangning } : null);
+  return { modell: v.modell || SYNTES_STANDARD.modell, anstrangning: v.anstrangning || SYNTES_STANDARD.anstrangning };
+}
+
+function kontrollera(modell: string, anstrangning: string) {
   if (!MODELLER.some((m) => m.id === modell)) throw new Error('okänd modell');
   if (!(NIVAER as readonly string[]).includes(anstrangning)) throw new Error('okänd ansträngning');
+}
+
+/** Sparar ett nytt val atomärt (0600) och lämnar filens övriga nycklar orörda. En oläsbar fil skrivs aldrig över. */
+export function sparaProv(modell: string, anstrangning: string, syntes?: { modell: string; anstrangning: string }): ProvVal {
+  kontrollera(modell, anstrangning);
+  if (syntes) kontrollera(syntes.modell, syntes.anstrangning);
   const dir = katalog();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   chmodSync(dir, 0o700);
   let ovrigt: Record<string, unknown> = {};
   if (existsSync(fil())) {
-    try {
-      const d = JSON.parse(readFileSync(fil(), 'utf8'));
-      if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('form');
-      ovrigt = d as Record<string, unknown>;
-    } catch {
-      throw new Error('installningar.json går inte att läsa; rätta eller ta bort filen först');
-    }
+    const d = lasFil();
+    if (!d) throw new Error('installningar.json går inte att läsa; rätta eller ta bort filen först');
+    ovrigt = d;
   }
   const tmp = join(dir, '.installningar.json.tmp');
-  writeFileSync(tmp, JSON.stringify({ ...ovrigt, modell, anstrangning, andrad: new Date().toISOString() }, null, 1) + '\n', { mode: 0o600 });
+  const nytt = { ...ovrigt, modell, anstrangning, ...(syntes ? { syntes_modell: syntes.modell, syntes_anstrangning: syntes.anstrangning } : {}), andrad: new Date().toISOString() };
+  writeFileSync(tmp, JSON.stringify(nytt, null, 1) + '\n', { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, fil());
   return lasProv();
@@ -85,10 +100,34 @@ export function sparaProv(modell: string, anstrangning: string): ProvVal {
 
 export function provVy(): ProvVy {
   const v = lasProv();
-  return { ...v, namn: modellNamn(v.modell), modeller: MODELLER.map((m) => ({ ...m })), nivaer: [...NIVAER] };
+  const s = lasSyntesProv();
+  return { ...v, namn: modellNamn(v.modell), modeller: MODELLER.map((m) => ({ ...m })), nivaer: [...NIVAER], syntes: { ...s, namn: modellNamn(s.modell) } };
 }
 
-/** Hur länge en tur får ta: högre ansträngning tänker längre. */
+/** Provens egen skalning av tidsgränserna: bara kärnproven sätter KUNDSTART_TIDSGRANS_MS, så att avbrott och nedväxling kan prövas på sekunder. */
+function tidsgrans(ms: number): number {
+  const t = Number(process.env.KUNDSTART_TIDSGRANS_MS);
+  return Number.isFinite(t) && t > 0 ? t : ms;
+}
+
+/** Hur länge en tur får ta: högre ansträngning tänker längre (Opus 5.5 på max mätt 2026-10-01: 70–248 s per tur). */
 export function turTimeoutMs(anstrangning: string): number {
-  return anstrangning === 'max' || anstrangning === 'xhigh' ? 300_000 : anstrangning === 'high' ? 240_000 : 170_000;
+  return tidsgrans(anstrangning === 'max' || anstrangning === 'xhigh' ? 420_000 : anstrangning === 'high' ? 300_000 : 170_000);
+}
+
+/**
+ * Sammanfattningen läser hela intervjun och citerar ordagrant; på high/xhigh/max tänker modellen länge (Opus 5.5 på max
+ * avbröts vid 300 s 2026-10-01). Tidsgränsen följer ansträngningen; avbryts ett försök på en sådan nivå görs ett försök
+ * till på NEDVAXLING i samma anrop (lib/arende.ts korModell), bokfört som nedväxling.
+ */
+export function syntesTimeoutMs(anstrangning: string = NEDVAXLING): number {
+  return tidsgrans(anstrangning === 'max' || anstrangning === 'xhigh' ? 900_000 : anstrangning === 'high' ? 600_000 : 300_000);
+}
+
+/** Ansträngningen syntesen växlar ned till när tidsgränsen avbrutit ett försök (medium mätt till 57 s 2026-10-01). */
+export const NEDVAXLING = 'medium';
+
+/** Nivåer vars syntes får ett försök till på NEDVAXLING efter ett avbrott. */
+export function nedvaxlas(anstrangning: string | undefined): boolean {
+  return anstrangning === 'high' || anstrangning === 'xhigh' || anstrangning === 'max';
 }

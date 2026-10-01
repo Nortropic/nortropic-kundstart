@@ -1,6 +1,9 @@
 # Drift — Kundstart
 
 Läst mot Vercels dokumentation 2026-09-27 (AI Gateway pricing/authentication/OIDC, Vercel Blob, Functions limits).
+Uppdaterad 2026-10-01 för intervjuformatet (Anthropic Interviewer): fem faser, turen och syntesen som två modellkontrakt,
+kundens eget avslut, samtycke vid inlämning, kvotbesked per modell. Ingen deploy: produktionen kör fortfarande den
+tidigare versionen tills ägaren driftsätter.
 Uppdaterad 2026-09-28 för intervjuagenten, tillvalen, domänflödet och kostnadsspärren, och 2026-09-29 för ägarens besked:
 bara prov nu, ingen kostnads-AI. Produktionen ställer standardlistans frågor utan modell, och AI-samtalet provas i det
 lokala testläget på ägarens dator (Claude Code på ägarens inloggning, som förbättringspartnern). Gateway-vägen och
@@ -29,7 +32,8 @@ kostnadsspärren finns kvar i koden men är avstängda; de är den väg Anthropi
 | `KUNDSTART_AI_MAX_ANROP` | Vercel | AI-anrop per ärende (standard 60) |
 | `KUNDSTART_AI_BUDGET_ARENDE_USD` / `_DYGN_USD` / `_MANAD_USD` | Vercel | kostnadstak per ärende / dygn (UTC) / kalendermånad, standard 0,40 / 1,00 / 3,50 USD |
 | `KUNDSTART_AI_RESONEMANG` | Vercel | resonemangsnivå för gatewaymodellen, standard `low` (mätt: `minimal` registrerade 4–6 av 8 kundbesked om tillval rätt, `low` 8 av 8) |
-| `KUNDSTART_PROV_DATA` | bara lokalt | testlägets katalog (standard `~/.nortropic-kundstart-prov`, 0700): `installningar.json` med modell och ansträngning (standard Opus 5.5, `low`), logg, pid |
+| `KUNDSTART_PROV_DATA` | bara lokalt | testlägets katalog (standard `~/.nortropic-kundstart-prov`, 0700): `installningar.json` med turens modell och ansträngning och syntesens (`syntes_modell`, `syntes_anstrangning`); standard Opus 5.5 på `max` för båda (ägarens beslut 2026-10-01), logg, pid |
+| `KUNDSTART_AVSLUT_EFTER_FRAGOR` | bara lokalt (prov) | frågegränsen för avrundning (standard 14); `3` i verkliga modellprov så att intervjuaren avrundar själv |
 | `AI_GATEWAY_API_KEY` | valfri | ersätter OIDC (t.ex. kör utanför Vercel) |
 | `BLOB_READ_WRITE_TOKEN`, `VERCEL_OIDC_TOKEN`, `BLOB_STORE_ID` | av Vercel | lagrets åtkomst |
 
@@ -45,9 +49,26 @@ kostnadsspärren finns kvar i koden men är avstängda; de är den väg Anthropi
   köps och inget tak höjs automatiskt. Efter tre fel i rad pausas AI-stödet i tio minuter. En agenttur får 45 s (funktionens gräns är 60 s, resten
   räcker för slutskrivningen och domänkontrollen): ett gatewayanrop högst 40 s, ett andra försök bara när minst 25 s
   återstår. Ett fel efter att turen tagit ärendets lås släpper låset direkt och kunden ser "Försök igen". En modellrespons som kommer efter en nyare kundändring bokförs men kasseras.
-  Agentens noteringar godtas bara med ordagrant citat ur namngivet kundsvar eller material; researchbeställningar är
+  Syntesens noteringar godtas bara med ordagrant citat ur namngivet kundsvar eller material; researchbeställningar är
   högst sex per ärende och startar ingen hämtning i Kundstart. Fri text från kunden startar aldrig verktygsloopar
-  eller webbhämtning. Sidfoten visar faktiskt läge (på, av, reserv, paus, kostnadsgräns).
+  eller webbhämtning. Sidfoten visar faktiskt läge (på, av, reserv, paus, kostnadsgräns, kvot).
+- Turen och syntesen: turen är liten (2 500 token, omtag 4 000 bara efter avkortning) och ställer en fråga; syntesen
+  körs en gång efter avslutet (12 000 token, omtag 16 000) under ett eget lås (`/api/granska`) och
+  skrivs om bara på begäran (`{igen:true}`) när kunden ändrat något. Tidsgränserna i testläget följer ansträngningen:
+  turen 170 s till och med medium, 300 s high, 420 s max/xhigh; syntesen 300 s, 600 s respektive 900 s (Opus 5.5 på max
+  mättes 2026-10-01 till 70–248 s per tur, och syntesen avbröts vid den gamla gränsen 300 s). Avbryts syntesen av
+  tidsgränsen på high/xhigh/max görs ett försök till på medium (mätt 57 s) i samma anrop, bokfört som `nedvaxlad_fran`
+  i syntesen, händelsen `syntes` och diagnostiken; låset täcker båda försöken. Ett `claude -p`-anrop kapas hårt efter
+  25 minuter. Misslyckas syntesen stannar ärendet i avslut med
+  svaren orörda och kunden kan försöka igen; efter tre fel sammanställs kundens svar deterministiskt (reserv), så att
+  granskningen alltid nås. Gateway-syntes på Vercel skulle slå i funktionstiden (60 s) och falla till reserven; vägen
+  är ändå avstängd. Kundens eget avslut (`/api/avsluta`) låter intervjuaren avrunda med ett turanrop.
+- Kvot (testläget): ett kvotbesked från `claude -p` ("You've hit your session limit", "You've reached your Opus limit")
+  klassas per modell och ger ingen tiominuterspaus; turen faller till standardlistan och sidfoten säger "AI-stöd:
+  kvoten för <modell> är slut … Byt modell med /model". Nästa lyckade anrop nollställer beskedet. Kvoten provas bara
+  med en falsk `claude`-binär (`tests/core/agent.cjs`), aldrig genom att framkalla gränsen.
+- Samtycke: inlämning kräver kundens kryssruta med exakt texten i `lib/samtycke.ts` (`samtycke/1`), bekräftad
+  genomläsning och fasen granskning (eller inlamnat med ändringar); annars 422/409. Texten sparas i inlämningen.
 - Tillval: kundens val sparas med idempotensnyckel; högst åtta egna behov; texter som ser ut som lösenord vägras. Ett
   val är ett önskemål, inte ett köp, och ändrar inget konto. Digitalas status sätts bara genom intern Bearer.
 - Domän: bara offentliga DNS- och RDAP-uppgifter; interna namn (`localhost`, `.local`, `.internal`, `.test`, `.example`,
@@ -82,14 +103,18 @@ kostnadsspärren finns kvar i koden men är avstängda; de är den väg Anthropi
 
 ## Lägen och vad kunden ser
 
-| Läge | Hur nästa fråga väljs | Vad kunden ser |
-|---|---|---|
-| `gateway` | intervjuagenten formulerar nästa fråga och noterar uppgifter, behov, tillval, täckning och research med citat | "AI-stöd: på. …"; AI-stödets tolkningar märkta i Ditt uppdrag |
-| reserv efter fel | regelstyrd för den frågan | "AI-stöd: reservläge efter ett fel. …" eller efter tre fel "AI-stöd: pausat efter upprepade fel. …", även efter omladdning |
-| kostnadstak nått | regelstyrd | "AI-stöd: pausat (ärendets budget för AI-stödet är förbrukad)" / "(dagens …)" / "(månadens …)" |
-| `regelstyrd` | följdfrågor först, sedan luckor i prioritetsordning | "AI-stöd: av. Frågorna följer vår standardlista." |
-| `claude-cli` (lokalt testläge) | som `gateway`, med den Claude-modell och ansträngning ägaren valt i skrivrutan, genom `claude -p` | "AI-stöd: på, lokalt testläge med Claude (Opus 5.5 · low). …"; modellvalet i skrivrutan; vägrar på Vercel |
-| ärendets läge tillåts inte i miljön | regelstyrd, utan felmeddelande (t.ex. ett äldre gateway-ärende i produktionen efter 2026-09-29) | "AI-stöd: av. Frågorna följer vår standardlista." |
+Alla lägen visar samma fem skärmar (intro, intervju, avslut, granskning, tack); skillnaden är vem som formulerar
+frågorna och sammanfattningen.
+
+| Läge | Turen | Avslut och syntes | Vad kunden ser |
+|---|---|---|---|
+| `claude-cli` (lokalt testläge) | intervjuaren speglar och ställer EN fråga ur guiden, med den Claude-modell och ansträngning ägaren valt i skrivrutan, genom `claude -p` | intervjuaren avrundar (nyckelinsikt, sista tankar); syntesen skriver sammanfattningen och noteringarna med citat, med syntesens eget modellval | "AI-stöd: på, lokalt testläge med Claude (Opus 5.5 · max). …"; "Skriven av AI-stödet utifrån era egna ord"; modellvalet i skrivrutan; vägrar på Vercel |
+| `gateway` (avstängt) | som ovan via AI Gateway | som ovan; syntesen ryms sällan i 60 s och faller till reserven | "AI-stöd: på. …" |
+| reserv efter fel | standardlistan för den frågan | efter tre syntesfel: deterministisk sammanställning | "AI-stöd: reservläge efter ett fel. …" eller "pausat efter upprepade fel", även efter omladdning |
+| kvot slut (testläget) | standardlistan | som reserv | "AI-stöd: kvoten för Opus 5.5 är slut (återställs 14:00). Byt modell med /model; …" |
+| kostnadstak nått (gateway) | standardlistan | reserv | "AI-stöd: pausat (ärendets budget för AI-stödet är förbrukad)" / "(dagens …)" / "(månadens …)" |
+| `regelstyrd` | följdfrågor först, sedan luckor i prioritetsordning, "Fråga 3 av ungefär 14"; avrundar med fast text | kundens svar sammanställs ordagrant under bankens rubriker | "AI-stöd: av. Frågorna följer vår standardlista och sammanfattningen är en sammanställning av era egna svar." |
+| ärendets läge tillåts inte i miljön | regelstyrd, utan felmeddelande (t.ex. ett äldre gateway-ärende i produktionen efter 2026-09-29) | som regelstyrd | som regelstyrd |
 
 ## Lokalt testläge (som förbättringspartnern)
 
@@ -102,9 +127,13 @@ npm run prov -- status    # kör den, vilken kod, vilket modellval
 npm run prov -- stopp
 ```
 
-I skrivrutan väljs modell (Opus 5.5, Fable 5.1, Sonnet 5, Opus 5, Haiku 4.5) och ansträngning (low–max), som i
+I skrivrutan väljs turens modell (Opus 5.5, Fable 5.1, Sonnet 5, Opus 5, Haiku 4.5) och ansträngning (low–max), som i
 förbättringspartnern; `/model sonnet` och `/effort high` i rutan byter direkt och skickas aldrig som svar. Valet gäller
-från nästa fråga och sparas i `installningar.json` (0600). Ett ärende som skapats i testläget har läget `claude-cli`;
+från nästa fråga och sparas i `installningar.json` (0600). Syntesen har ett eget val i samma fil (`syntes_modell`,
+`syntes_anstrangning`; sätts med `POST /api/prov/installningar {syntes:{…}}`). Standard är Opus 5.5 på max för både
+turen och syntesen (ägarens beslut 2026-10-01). Känns turerna långsamma: `/effort low` eller `/model sonnet`. `npm run prov -- oppna --ny` skapar ett ärende som börjar på startskärmen; det befintliga
+provärendet härleder sin fas ur det som finns (ingen migrering). `node scripts/modellprov.cjs` kör turens och
+syntesens prompter mot riktig modell utan webbläsare och skriver tid, cacheträffar och validerad utdata. Ett ärende som skapats i testläget har läget `claude-cli`;
 öppnas det på en server utan testläget får det standardlistan. Testläget är bara för ägarens egna prov: Anthropics
 villkor för Claude Code tillåter inte att en Pro- eller Max-inloggning svarar någon annans användare.
 
