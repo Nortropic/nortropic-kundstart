@@ -20,10 +20,9 @@ export type Niva = (typeof NIVAER)[number];
 export interface ProvVal { modell: string; anstrangning: Niva }
 export interface ProvVy extends ProvVal { namn: string; modeller: { id: string; namn: string; om: string }[]; nivaer: string[]; syntes: ProvVal & { namn: string } }
 
-/** Ett samtal behöver korta svarstider, därför låg ansträngning som standard; ägaren höjer i skrivrutan. */
-const STANDARD: ProvVal = { modell: 'claude-opus-5-5', anstrangning: 'low' };
-/** Sammanfattningen görs en gång och bär alla ordagranna citat: mer ansträngning än turen, samma modell som standard. */
-const SYNTES_STANDARD: ProvVal = { modell: 'claude-opus-5-5', anstrangning: 'medium' };
+/** Ägarens beslut 2026-10-01: Opus 5.5 på max som standard för både turen och sammanfattningen; sänks i skrivrutan vid behov. */
+const STANDARD: ProvVal = { modell: 'claude-opus-5-5', anstrangning: 'max' };
+const SYNTES_STANDARD: ProvVal = { modell: 'claude-opus-5-5', anstrangning: 'max' };
 
 /** Testläget gäller bara den lokala servern som startats med KUNDSTART_AI=claude-cli, aldrig på Vercel. */
 export function provTillatet(): boolean {

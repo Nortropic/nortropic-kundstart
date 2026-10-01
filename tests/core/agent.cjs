@@ -584,11 +584,11 @@ test('Testlägets val: listorna, privat fil, syntesens eget val, oläsbar fil sk
   process.env.KUNDSTART_PROV_DATA = path.join(dir, 'data');
   const fil = path.join(dir, 'data', 'installningar.json');
   try {
-    assert.deepEqual(P.lasProv(), { modell: 'claude-opus-5-5', anstrangning: 'low' }, 'standardvalet utan fil');
-    assert.deepEqual(P.lasSyntesProv(), { modell: 'claude-opus-5-5', anstrangning: 'medium' }, 'syntesens standardval utan fil');
+    assert.deepEqual(P.lasProv(), { modell: 'claude-opus-5-5', anstrangning: 'max' }, 'standardvalet utan fil');
+    assert.deepEqual(P.lasSyntesProv(), { modell: 'claude-opus-5-5', anstrangning: 'max' }, 'syntesens standardval utan fil');
     assert.deepEqual(P.sparaProv('claude-sonnet-5', 'high'), { modell: 'claude-sonnet-5', anstrangning: 'high' });
     assert.equal(fs.statSync(fil).mode & 0o777, 0o600); assert.equal(fs.statSync(path.join(dir, 'data')).mode & 0o777, 0o700);
-    assert.deepEqual(P.lasSyntesProv(), { modell: 'claude-opus-5-5', anstrangning: 'medium' }, 'turens val rör inte syntesens');
+    assert.deepEqual(P.lasSyntesProv(), { modell: 'claude-opus-5-5', anstrangning: 'max' }, 'turens val rör inte syntesens');
     P.sparaProv('claude-sonnet-5', 'high', { modell: 'claude-haiku-4-5-20251001', anstrangning: 'low' });
     assert.deepEqual(P.lasSyntesProv(), { modell: 'claude-haiku-4-5-20251001', anstrangning: 'low' });
     assert.equal(P.provVy().syntes.namn, 'Haiku 4.5');
@@ -601,7 +601,7 @@ test('Testlägets val: listorna, privat fil, syntesens eget val, oläsbar fil sk
     fs.writeFileSync(fil, '{trasig');
     assert.throws(() => P.sparaProv('claude-opus-5', 'low'), /går inte att läsa/);
     assert.equal(fs.readFileSync(fil, 'utf8'), '{trasig', 'en oläsbar fil skrivs aldrig över');
-    assert.deepEqual(P.lasProv(), { modell: 'claude-opus-5-5', anstrangning: 'low' }, 'oläsbar fil ger standardvalet');
+    assert.deepEqual(P.lasProv(), { modell: 'claude-opus-5-5', anstrangning: 'max' }, 'oläsbar fil ger standardvalet');
     assert.equal(P.turTimeoutMs('low'), 170000); assert.equal(P.turTimeoutMs('max'), 300000); assert.equal(P.syntesTimeoutMs(), 300000);
     fs.rmSync(fil);
     process.env.KUNDSTART_AI = 'claude-cli';

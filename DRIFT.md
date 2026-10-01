@@ -32,7 +32,7 @@ kostnadsspärren finns kvar i koden men är avstängda; de är den väg Anthropi
 | `KUNDSTART_AI_MAX_ANROP` | Vercel | AI-anrop per ärende (standard 60) |
 | `KUNDSTART_AI_BUDGET_ARENDE_USD` / `_DYGN_USD` / `_MANAD_USD` | Vercel | kostnadstak per ärende / dygn (UTC) / kalendermånad, standard 0,40 / 1,00 / 3,50 USD |
 | `KUNDSTART_AI_RESONEMANG` | Vercel | resonemangsnivå för gatewaymodellen, standard `low` (mätt: `minimal` registrerade 4–6 av 8 kundbesked om tillval rätt, `low` 8 av 8) |
-| `KUNDSTART_PROV_DATA` | bara lokalt | testlägets katalog (standard `~/.nortropic-kundstart-prov`, 0700): `installningar.json` med turens modell och ansträngning (standard Opus 5.5, `low`) och syntesens (`syntes_modell`, `syntes_anstrangning`; standard Opus 5.5, `medium`), logg, pid |
+| `KUNDSTART_PROV_DATA` | bara lokalt | testlägets katalog (standard `~/.nortropic-kundstart-prov`, 0700): `installningar.json` med turens modell och ansträngning och syntesens (`syntes_modell`, `syntes_anstrangning`); standard Opus 5.5 på `max` för båda (ägarens beslut 2026-10-01), logg, pid |
 | `KUNDSTART_AVSLUT_EFTER_FRAGOR` | bara lokalt (prov) | frågegränsen för avrundning (standard 14); `3` i verkliga modellprov så att intervjuaren avrundar själv |
 | `AI_GATEWAY_API_KEY` | valfri | ersätter OIDC (t.ex. kör utanför Vercel) |
 | `BLOB_READ_WRITE_TOKEN`, `VERCEL_OIDC_TOKEN`, `BLOB_STORE_ID` | av Vercel | lagrets åtkomst |
@@ -103,7 +103,7 @@ frågorna och sammanfattningen.
 
 | Läge | Turen | Avslut och syntes | Vad kunden ser |
 |---|---|---|---|
-| `claude-cli` (lokalt testläge) | intervjuaren speglar och ställer EN fråga ur guiden, med den Claude-modell och ansträngning ägaren valt i skrivrutan, genom `claude -p` | intervjuaren avrundar (nyckelinsikt, sista tankar); syntesen skriver sammanfattningen och noteringarna med citat, med syntesens eget modellval | "AI-stöd: på, lokalt testläge med Claude (Opus 5.5 · low). …"; "Skriven av AI-stödet utifrån era egna ord"; modellvalet i skrivrutan; vägrar på Vercel |
+| `claude-cli` (lokalt testläge) | intervjuaren speglar och ställer EN fråga ur guiden, med den Claude-modell och ansträngning ägaren valt i skrivrutan, genom `claude -p` | intervjuaren avrundar (nyckelinsikt, sista tankar); syntesen skriver sammanfattningen och noteringarna med citat, med syntesens eget modellval | "AI-stöd: på, lokalt testläge med Claude (Opus 5.5 · max). …"; "Skriven av AI-stödet utifrån era egna ord"; modellvalet i skrivrutan; vägrar på Vercel |
 | `gateway` (avstängt) | som ovan via AI Gateway | som ovan; syntesen ryms sällan i 60 s och faller till reserven | "AI-stöd: på. …" |
 | reserv efter fel | standardlistan för den frågan | efter tre syntesfel: deterministisk sammanställning | "AI-stöd: reservläge efter ett fel. …" eller "pausat efter upprepade fel", även efter omladdning |
 | kvot slut (testläget) | standardlistan | som reserv | "AI-stöd: kvoten för Opus 5.5 är slut (återställs 14:00). Byt modell med /model; …" |
@@ -125,8 +125,8 @@ npm run prov -- stopp
 I skrivrutan väljs turens modell (Opus 5.5, Fable 5.1, Sonnet 5, Opus 5, Haiku 4.5) och ansträngning (low–max), som i
 förbättringspartnern; `/model sonnet` och `/effort high` i rutan byter direkt och skickas aldrig som svar. Valet gäller
 från nästa fråga och sparas i `installningar.json` (0600). Syntesen har ett eget val i samma fil (`syntes_modell`,
-`syntes_anstrangning`, standard Opus 5.5 · medium; sätts med `POST /api/prov/installningar {syntes:{…}}`). Känns turerna
-långsamma: `/model sonnet`. `npm run prov -- oppna --ny` skapar ett ärende som börjar på startskärmen; det befintliga
+`syntes_anstrangning`; sätts med `POST /api/prov/installningar {syntes:{…}}`). Standard är Opus 5.5 på max för både
+turen och syntesen (ägarens beslut 2026-10-01). Känns turerna långsamma: `/effort low` eller `/model sonnet`. `npm run prov -- oppna --ny` skapar ett ärende som börjar på startskärmen; det befintliga
 provärendet härleder sin fas ur det som finns (ingen migrering). `node scripts/modellprov.cjs` kör turens och
 syntesens prompter mot riktig modell utan webbläsare och skriver tid, cacheträffar och validerad utdata. Ett ärende som skapats i testläget har läget `claude-cli`;
 öppnas det på en server utan testläget får det standardlistan. Testläget är bara för ägarens egna prov: Anthropics
