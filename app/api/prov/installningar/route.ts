@@ -21,9 +21,9 @@ export async function POST(req: Request) {
   if (req.headers.get('x-kundstart-prov') !== '1') return NextResponse.json({ ok: false, fel: 'fel ursprung' }, { status: 403 });
   const s = await hamtaSession();
   if ('fel' in s) return felSvar(s.fel);
-  const d = (await req.json().catch(() => ({}))) as { modell?: unknown; anstrangning?: unknown };
+  const d = (await req.json().catch(() => ({}))) as { modell?: unknown; anstrangning?: unknown; syntes?: { modell?: unknown; anstrangning?: unknown } };
   try {
-    sparaProv(String(d.modell || ''), String(d.anstrangning || ''));
+    sparaProv(String(d.modell || ''), String(d.anstrangning || ''), d.syntes && typeof d.syntes === 'object' ? { modell: String(d.syntes.modell || ''), anstrangning: String(d.syntes.anstrangning || '') } : undefined);
   } catch (e) {
     return NextResponse.json({ ok: false, fel: (e as Error).message }, { status: 400 });
   }
