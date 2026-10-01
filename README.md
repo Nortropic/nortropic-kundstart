@@ -1,21 +1,28 @@
 # nortropic-kundstart — Digitala Kundstart
 
-Kundlänken för Digitalas intervju och materialinlämning: ett lugnt samtal på webben där kunden berättar, kompletterar
-och rättar vår förståelse, i sin egen takt och på mobilen. Kundstart är **kundytan**; intervjulogiken, research.md,
+Kundlänken för Digitalas intervju och materialinlämning: en intervju på webben i Anthropic Interviewers format, där
+kunden berättar i sin egen takt (gärna på mobilen), läser igenom vår sammanfattning och bestämmer själv om den ska
+lämnas vidare. Kundstart är **kundytan**; intervjulogiken, research.md,
 briefen och kedjan bor i `Nortropic/nortropic-digitala` (steget `intervju`, `verktyg/intervju.py`). Kundstart är en
 kanal i den modellen ("Kundstart-länk"), inte en egen intervjumotor och inte en andra sanning om kunden.
 
-## Tre moment
+## Fem faser
 
-1. **Börja eller fortsätt** — kunden öppnar sin personliga länk och fortsätter där den var. Första frågan är fast
-   ("Berätta med egna ord …") så att ingen väntar på en modell innan samtalet börjat.
-2. **Samtalet** — en sammanhållen intervjuagent ställer en fråga i taget, formulerar egna följdfrågor och kan notera
-   flera behov ur ett och samma svar. Frågebanken är agentens täckningsstöd, inte ett manus. "Vet inte", "gäller inte",
-   "avstår" och "återkom senare" är riktiga svar som hålls isär. Tillval kan väljas direkt i samtalet.
-3. **Ditt uppdrag** — samma ärende som översikt: mål, det vi förstått (kundens ord skilda från AI-stödets tolkningar),
-   valda och rekommenderade tillval, material med lässtatus, det som återstår och det Digitala själva ska undersöka.
-   Allt går att rätta här eller i samtalet. På stor skärm står översikten bredvid samtalet, på mobil öppnas den som ett
-   ark från sidhuvudet. Inlämning bekräftar vad som lämnats, utan design- eller avtalsgodkännande.
+1. **Intro** — startskärmen säger vad intervjun är, att den tar ungefär 15 minuter och att kunden efteråt läser igenom
+   och bestämmer själv. "Börja intervjun" ställer den fasta öppningsfrågan ("Berätta med egna ord …") utan att vänta på
+   någon modell; "Inte nu" sparar ingenting och länken fungerar senare.
+2. **Intervjun** — en enda tråd: intervjuaren speglar det kunden sagt och ställer EN öppen fråga i taget; kunden svarar
+   i en skrivruta. Inga paneler, flervalsknappar eller kort. Frågebanken är intervjuguiden (områden, prioritet,
+   exempelformuleringar), inte ett manus. "Vet inte", "gäller inte oss" och "återkom" sägs i ord; ett helt
+   "vet inte"-svar sparas som ett ärligt okänt. Kunden kan avsluta själv när som helst.
+3. **Avslut** — intervjuaren rundar av (en nyckelinsikt, det kunden själv lyft) och bjuder in sista tankar; kunden kan
+   gå vidare eller berätta mer.
+4. **Granskning** — sammanfattningen ("så här förstod vi er"), översikten "Det vi har förstått" med rättelser (tillval och
+   material som valfria, infällda avsnitt), hela intervjun ordagrant och samtycket: kryssrutan "Jag har läst igenom min
+   intervju och vill lämna den vidare till Nortropic" låses upp när slutet av intervjun nåtts, och servern kräver exakt
+   den texten och rätt fas. Inlämning godkänner ingen design, inget köp och inget avtal.
+5. **Tack** — vad som lämnats och vad som händer nu. Det inlämnade kan visas igen; nya svar efter inlämningen syns som
+   ändringar och lämnas in på nytt.
 
 ## Hur det hänger ihop
 
@@ -31,14 +38,21 @@ Digitala (kundmappen, INTERVJU.json)  ◀── verktyg/kundstart.py hamta ─�
 - **Frågebanken** är en snapshot av `GRUND`, `FOLJDREGLER` m.m. ur `nortropic-digitala/verktyg/intervju.py`
   (`intervju-bank.json`, med filens sha256 och git-revision). `verktyg/bank_snapshot.py` tar den, `verktyg/bank_kontroll.mjs`
   visar drift. Banken är stöd; källbundna behov och revisionsbundna returfrågor kan tillkomma i samma ärende. Se KUNDSTART-KONTRAKT.md.
-- **Intervjuagenten** (`lib/agent.ts`, körs från `nasta()` i `lib/arende.ts`) får ärendets kända uppgifter, täckning,
-  tillval och senaste svar, och svarar med ett strikt JSON-schema: nästa fråga plus ett fåtal "verktyg" som strukturerade
-  listor (`uppgifter`, `behov`, `tillval`, `tackning`, `research`). Servern tilldelar alla id, kräver att varje notering
-  citerar kundens ord ordagrant ur ett namngivet svar eller material, och avvisar resten synligt i händelseloggen. Ett
-  tillval blir kundens val bara när kundens eget citat bär det; utan citat kan det bara bli en rekommendation. En modellrespons som kommer efter en nyare ändring
-  (svar, rättelse, tillvalsval) kasseras; kundens senaste ord vinner. Ingen HTML eller kod från modellen körs hos kunden.
-  Sedan 2026-09-29 (ägarens besked: bara prov nu, ingen kostnads-AI) körs agenten bara i det lokala testläget på ägarens
-  dator, med Claude Code på ägarens inloggning som förbättringspartnern. Produktionen ställer standardlistans frågor.
+- **Intervjuaren** (`lib/agent.ts`, körs från `nasta()` och `syntes()` i `lib/arende.ts`) arbetar i två kontrakt, som
+  Anthropic Interviewers planering → intervju → analys. **Turen** får en slank kontext (samtalet, täckning, utlösta och
+  negerade följdämnen, öppna behov) och svarar med ett litet strikt JSON-schema: återkoppling, EN öppen fråga ur guiden,
+  berörda nycklar och om den vill runda av. **Syntesen** körs en gång efter avslutet med hela intervjun och material, och
+  svarar med sammanfattningen till kunden plus noteringarna (`uppgifter`, `behov`, `tillval`, `tackning`, `research`).
+  Reglerna och intervjuguiden (genererad ur banken) ligger i statiska systemprompter, så modellens promptcache kan träffa
+  mellan turer. Servern tilldelar alla id, kräver att varje notering citerar kundens ord ordagrant ur ett namngivet svar
+  eller material, och avvisar resten synligt i händelseloggen. Ett tillval blir kundens val bara när kundens eget citat
+  bär det; utan citat kan det bara bli en rekommendation. Ett negerat följdämne som inte är utlöst får inte tas upp
+  (NEGATION-regeln speglas av servern). En modellrespons som kommer efter en nyare ändring kasseras; kundens senaste ord
+  vinner. Avrundning godtas när inga viktiga områden står orörda och minst sex frågor ställts, eller efter fjorton; samma
+  regel gäller standardlistan. Ingen HTML eller kod från modellen körs hos kunden.
+  Sedan 2026-09-29 (ägarens besked: bara prov nu, ingen kostnads-AI) körs intervjuaren bara i det lokala testläget på
+  ägarens dator, med Claude Code på ägarens inloggning som förbättringspartnern. Produktionen ställer standardlistans
+  frågor och sammanställer kundens egna svar ordagrant utan modell.
 - **Tillval** (`lib/tillval.ts`): domän, formulär/bilagor, e-postmottagning, bokning, betalning/deposition, CRM,
   nyhetsbrev, CMS, Search Console, Google-företagsprofil, Google Ads, Meta-annonser och analys, plus kundens egna behov.
   Kundens val (vill ha / har redan ett system / hjälp att välja / inte nu), Digitalas rekommendation och Digitalas
@@ -89,9 +103,13 @@ npm run prov -- stopp
 ```
 
 ```sh
-npm run test:core                 # agent, kostnadsspärr, domän, tillval, CAS (utan nätverk utom märkta prov)
-KUNDSTART_AI=claude-cli npx playwright test tests/ai.spec.ts tests/provlage.spec.ts   # verklig modelltur och modellvalet lokalt
+npm run test:core                 # fasmaskinen, intervjuaren (tur + syntes), kostnadsspärr, domän, tillval, CAS (utan nätverk)
+KUNDSTART_AI=claude-cli KUNDSTART_AVSLUT_EFTER_FRAGOR=3 npx playwright test tests/ai.spec.ts tests/provlage.spec.ts   # hel intervju mot riktig modell på 3111
+node scripts/modellprov.cjs --model claude-opus-5-5 --effort low   # turens och syntesens prompter mot riktig modell, utan webbläsare
 ```
+
+Förbrukningen i testläget räknas i abonnemangets kvot (en modellsession per tur och en per syntes), inte i USD. Tar en
+modells kvot slut säger sidfoten det och botemedlet är `/model`: turerna faller till standardlistan tills dess.
 
 ## Överlämning och åtgärdskontrakt
 

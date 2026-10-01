@@ -68,6 +68,52 @@ Interna vägar (Bearer):
   (`status:null` tar bort den). Administrativt: ingen ny kundrevision, ingen ny signal. `kalla` krävs.
 - `GET /api/intern/budget` visar tak och månadens bokföring (faktisk kostnad, okänd förbrukning, vägrade anrop).
 
+## Intervjuformat (kandidat 2026-10-01)
+
+Kundstart följer Anthropic Interviewers format i fem faser som servern äger: `intro` (startskärm; `POST /api/borja`
+ställer den fasta öppningsfrågan `AG1` med `roll:"oppning"`) → `intervju` (en tråd, en skrivruta; `POST /api/nasta`) →
+`avslut` (avslutsmeddelandet och avslutsfrågan för sista tankar, `AG<n>` med `roll:"avslut"`, `nyckel:"avslut"`,
+`omrade:"H"`; `POST /api/avsluta` låter kunden avsluta själv, varvid en obesvarad fråga skjuts upp) → `granskning`
+(`POST /api/granska` skriver sammanfattningen; `{igen:true}` skriver om den) → `inlamnat` (`POST /api/inlamning`).
+"Jag vill berätta mer" (`POST /api/nasta {fortsatt:true}`) öppnar samtalet igen från avslut, granskning eller inlamnat;
+sammanfattningen får då `status:"inaktuell"`. Returfrågor från Digitala sätter fasen till intervju; när den sista är
+besvarad går kunden tillbaka till granskningen. Äldre dokument utan `fas` härleds (inlamnat/intro/avslut/intervju) och
+får fältet skrivet vid nästa övergång.
+
+Modellarbetet är två kontrakt (`lib/agent.ts`): turen (`kundstart_tur`: `aterkoppling`, `fraga {text, nyckel, behov_id,
+omrade, varfor}`, `tackning [{nyckel, lage: berord|tackt}]`, `klar`, `vagvisning`) och syntesen (`kundstart_syntes`:
+`sammanfattning`, `nyckelinsikt`, `oppet`, samt de tidigare noteringarna `uppgifter`, `behov`, `tillval`, `tackning`,
+`research` med samma citatkrav som förut). Frågans nyckel måste finnas i guiden (banken), vara ett öppet behov (med
+`behov_id`) eller `avslut`; ett negerat följdämne som inte är utlöst förkastas och standardlistan ställer frågan i
+stället. Avrundning godtas när `agentFragor >= 14` eller när inga viktiga områden står orörda och minst sex frågor
+ställts (`KUNDSTART_AVSLUT_EFTER_FRAGOR` styr gränsen i prov); standardlistan rundar av med samma regel eller när den
+är slut. Syntesen är idempotent (en aktuell sammanfattning skrivs inte om utan `igen`), körs under ärendets lås, kasserar
+ett svar som kommer efter en nyare revision, lämnar ärendet i avslut vid fel (svaren orörda) och sammanställer kundens
+svar deterministiskt efter tre fel (`valjare:"regelstyrd"`). Ett kvotbesked från `claude -p` ger felklassen `kvot`
+(`ai.kvot {modell, aterstalls, besked}`), ingen paus och ingen räkning av fel i rad.
+
+Inlämningen kräver kroppen `{idempotens, samtycke:{version:"samtycke/1", text, bekraftat:true, transkript_last:true}}`
+med exakt den text som visades (`lib/samtycke.ts`; 422 annars) och fasen granskning eller inlamnat (409 annars).
+
+Exporten `kundstart-export/1` behåller alla tidigare fält och lägger till:
+
+- `fas` och `fas_historik`: `{fran, till, tid, revision, av: kund|ai|regelstyrd|digitala}`.
+- `syntes`: `{id, status: klar|misslyckad|inaktuell, bas_revision, revision, tid, valjare: ai|regelstyrd, modell,
+  anstrangning, ms, forsok, fel, sammanfattning, nyckelinsikt, oppet:[{nyckel, varfor}], avvisade}` eller `null`.
+  Sammanfattningen är en tolkning; kundens ord och rättelser står över. Syntesens noteringar hamnar i de befintliga
+  fälten (`kunduppgifter`, `fakta_ai`, `behov`, `tillval`, `tackning_agent`, `research`).
+- `transkript`: hela intervjun i ordning, `{fraga_id, roll: oppning|fraga|avslut, inledning, fraga, stalld, valjare,
+  status, svar:{text, typ, tid, andrad}|null}`.
+- `berorda`: guidens nycklar som turerna berört eller täckt (`{nyckel, lage, fraga_id, revision}`); styr bara
+  avrundningen, inte `tackning`.
+- `arende.inlamningar[].samtycke`: `{version, text, tid, revision, syntes_id, transkript_last, idempotens}`.
+- `omgangar[].fragor[].roll` (`oppning`/`avslut`) och `samtal_klar.valjare` kan vara `kund`.
+- `ai.kvot` (modelltext, aldrig kundtext) och `ai.diagnostik[].cache_read`/`cache_write`.
+
+Digitalas konsument (`verktyg/kundstart.py`) läser bara namngivna fält och ignorerar de nya; avslutsfrågan passerar
+`giltig_fraga` och dess svar importeras som vilket svar som helst. Att visa `syntes` och `transkript` i INTERVJU.json
+är en separat uppföljning i Digitala.
+
 ## AI-kontrakt och ärlig felstatus
 
 AI-läget (2026-09-29): utan uttryckligt `KUNDSTART_AI` ställer standardlistan frågorna överallt, och gateway anropas bara med `KUNDSTART_AI=gateway`, även för äldre ärenden som skapades med gateway. Agenten provas i det lokala testläget (`claude-cli`, `npm run prov`) med den Claude-modell och ansträngning som väljs i skrivrutan; `GET`/`POST /api/prov/installningar` finns bara där och kräver session och huvudet `x-kundstart-prov: 1`. När gateway är påslagen gäller: standardmodellen `openai/gpt-5-mini`. Agentturen använder strikt JSON-schema, resonemangsnivå `low` och `max_completion_tokens` 6000, högst ett till försök med 10000 och bara när minst 25 av turens 45 sekunder återstår; varje försök reserverar sin kostnad före anropet (se DRIFT.md). Stycket nedan beskriver felklasserna, som gäller oförändrat. Slutorsak `length`, refusal, transport/HTTP, format och sakligt otillräckligt resultat särskiljs. Slutorsak och kända token sparas även vid misslyckande; timeoutens leverantörsförbrukning är okänd och de summerade token är bara de återrapporterade. En ostyrkt täcknings-/behovsrad avvisas separat med fält/id/källcitathash; den stänger ingen fråga. Andra giltiga källbundna behov bevaras och nästa fråga kommer från den ordinarie kandidaten för just det ostyrkta området. Detta visas som semantiskt reservläge, aldrig som helt lyckad tolkning; råa providerfel och råa modelltexter loggas inte. Permanenta HTTP-fel återförsöks inte. 429/5xx samt format/avkortning/semantik har högst två försök, högst 40 sekunder per gatewayanrop; lång Retry-After går till reservväg.
