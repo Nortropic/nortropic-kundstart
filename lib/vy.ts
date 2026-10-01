@@ -1,12 +1,13 @@
 // Vyn som kundens webbläsare får: inga lagringssökvägar, inga idempotensnycklar, ingen händelselogg, ingen kostnad.
 // Samtalet och "Ditt uppdrag" är två vyer av samma ärende och byggs här ur samma dokument.
-import { aterstar, bild, effektivtLage, type BildRad } from './arende';
+import { AVSLUT_EFTER_FRAGOR, andratEfter, aterstar, bild, effektivtLage, fasAv, kundRevision, transkript, type BildRad, type TranskriptRad } from './arende';
+import { SAMTYCKE } from './samtycke';
 import { provVy, type ProvVy } from './provlage';
-import { BANK } from './bank';
+import { BANK, rubrik } from './bank';
 import { kontrollText } from './doman';
 import { tackning, behovMedStatus } from './tackning';
 import { DIGITALA_TEXT, GRUPPER, KUNDVAL_TEXT, TILLVAL, tillvalDef, tillvalNamn } from './tillval';
-import type { Arende, Fraga, Tillval, TillvalKundval } from './typer';
+import type { Arende, Fas, Fraga, Tillval, TillvalKundval } from './typer';
 
 export interface FragaVy {
   id: string;
@@ -19,13 +20,14 @@ export interface FragaVy {
   alternativ?: string[];
   tillval?: string[];
   inledning?: string;
+  roll?: 'oppning' | 'avslut';
   valjare: 'regelstyrd' | 'ai';
 }
 
 export interface DialogRad { fraga_id: string; fraga: string; svar: string; typ: string; tid: string; nyckel: string; andrad: number }
 
 /** Samtalet i ordning: agentens (eller standardlistans) fråga med återkoppling, sedan kundens svar ordagrant. */
-export interface SamtalRad { fraga_id: string; fraga: string; inledning?: string; valjare: 'regelstyrd' | 'ai'; kalla: string; stalld: string; svar?: { text: string; typ: string; tid: string; andrad: number }; status: string }
+export interface SamtalRad { fraga_id: string; roll?: 'oppning' | 'avslut'; fraga: string; inledning?: string; valjare: 'regelstyrd' | 'ai'; kalla: string; stalld: string; svar?: { text: string; typ: string; tid: string; andrad: number }; status: string }
 
 export interface MaterialVy { id: string; typ: 'fil' | 'lank'; filnamn?: string; mime?: string; storlek?: number; url?: string; beskrivning?: string; mottaget: string; lasstatus: string }
 
@@ -58,8 +60,18 @@ export interface UppdragVy {
   senare: { id: string; text: string; not?: string }[];
 }
 
+/** Sammanfattningen för kunden: text, källa och om den fortfarande stämmer med kundens senaste ändringar. */
+export interface SyntesVy { id: string; status: string; sammanfattning: string; nyckelinsikt: string; oppet: { nyckel: string; rubrik: string; varfor: string }[]; tid: string; valjare: 'ai' | 'regelstyrd'; aktuell: boolean }
+
 export interface Vy {
-  arende: { id: string; kund: { namn: string }; testdialog: boolean; revision: number; kanal: string; inlamnad: { tid: string; svar: number; material: number } | null; uppdaterad: string };
+  arende: { id: string; kund: { namn: string }; testdialog: boolean; revision: number; kanal: string; inlamnad: { tid: string; svar: number; material: number; samtycke_tid?: string } | null; uppdaterad: string };
+  /** Intervjuns fas: intro, intervju, avslut, granskning eller inlamnat. Skärmen följer fasen. */
+  fas: Fas;
+  /** Standardlistans räknare ("Fråga 3 av ungefär 14"); intervjuaren vägvisar i ord i stället. */
+  framsteg: { nr: number; ungefar: number } | null;
+  syntes: SyntesVy | null;
+  transkript: TranskriptRad[];
+  samtycke: { version: string; text: string };
   ai: { lage: string; modell?: string; anrop: number; status: string; beskrivning: string; prov?: ProvVy };
   tackning: ReturnType<typeof tackning>;
   behov: { id: string; nyckel: string; citat: string; status: string; kan_oppnas: boolean }[];
@@ -87,7 +99,7 @@ function varfor(f: Fraga): string {
 }
 
 export function fragaVy(f: Fraga): FragaVy {
-  return { id: f.id, omrade: f.omrade, omrade_namn: BANK.omraden[f.omrade] || '', nyckel: f.nyckel, text: f.text, varfor: varfor(f), typ: f.typ, alternativ: f.alternativ, tillval: f.tillval, inledning: f.inledning, valjare: f.valjare };
+  return { id: f.id, omrade: f.omrade, omrade_namn: BANK.omraden[f.omrade] || '', nyckel: f.nyckel, text: f.text, varfor: varfor(f), typ: f.typ, alternativ: f.alternativ, tillval: f.tillval, inledning: f.inledning, roll: f.roll, valjare: f.valjare };
 }
 
 export function tillvalVy(t: Tillval | undefined, id: string): TillvalVy {
@@ -116,19 +128,21 @@ export function tillVy(a: Arende): Vy {
   const fragaText = new Map(a.fragor.map((f) => [f.id, f.text]));
   const sistaInl = a.inlamningar[a.inlamningar.length - 1];
   const oppna = a.fragor.filter((f) => f.status === 'stalld').map(fragaVy);
+  const fas = fasAv(a);
   const kvar = aterstar(a);
   const pausad = Boolean(a.ai.paus_till && Date.parse(a.ai.paus_till) > Date.now());
   // Läget som faktiskt gäller i den här miljön: ett äldre gateway-ärende är av när gateway inte är påslagen.
   const lageNu = effektivtLage(a.ai.lage);
   const prov = lageNu === 'claude-cli' ? provVy() : undefined;
   const aiStatus = lageNu === 'regelstyrd' ? 'av' : pausad ? 'pausad' : a.ai.aktuell || (a.ai.senaste_fel && !a.ai.senaste_lyckade ? 'reserv' : 'aktiv');
-  const aiBeskrivning = aiStatus === 'av' ? 'AI-stöd: av. Frågorna följer vår standardlista.'
+  const aiBeskrivning = aiStatus === 'av' ? 'AI-stöd: av. Frågorna följer vår standardlista och sammanfattningen är en sammanställning av era egna svar.'
+    : a.ai.kvot ? `AI-stöd: kvoten för ${a.ai.kvot.modell} är slut${a.ai.kvot.aterstalls ? ` (återställs ${a.ai.kvot.aterstalls})` : ''}. Byt modell med /model; tills dess följer frågorna standardlistan.`
     : aiStatus === 'pausad' ? (a.ai.budget_skal ? `AI-stöd: pausat (${a.ai.budget_skal}). Era svar sparas; frågorna följer vår standardlista.` : 'AI-stöd: pausat efter upprepade fel. Era svar sparas; frågorna följer vår standardlista.')
       : aiStatus === 'reserv' ? 'AI-stöd: reservläge efter ett fel. Era svar sparas; nästa fråga följer standardlistan.'
         : prov ? `AI-stöd: på, lokalt testläge med Claude (${prov.namn} · ${prov.anstrangning}). Era egna ord sparas ordagrant och skilt från AI:ns tolkningar.` : 'AI-stöd: på. Era egna ord sparas ordagrant och skilt från AI:ns tolkningar.';
   const bildRader = bild(a);
   const tillvalLista = [...TILLVAL.map((d) => tillvalVy((a.tillval || []).find((t) => t.id === d.id), d.id)), ...(a.tillval || []).filter((t) => !tillvalDef(t.id)).map((t) => tillvalVy(t, t.id))];
-  const inlamnad = sistaInl && !a.fragor.some(f => f.status === 'stalld' && (f.kalla === 'returfraga' || (f.oppnad_revision || 0) > sistaInl.revision || f.stalld > sistaInl.tid)) && !a.svar.some(s => s.revision > sistaInl.revision) && !a.rattelser.some(r => r.revision > sistaInl.revision) && !a.material.some(m => m.revision > sistaInl.revision) && !(a.tillval || []).some(t => t.revision > sistaInl.revision) ? { tid: sistaInl.tid, svar: sistaInl.svar, material: sistaInl.material } : null;
+  const inlamnad = sistaInl && !andratEfter(a, sistaInl) ? { tid: sistaInl.tid, svar: sistaInl.svar, material: sistaInl.material, samtycke_tid: sistaInl.samtycke?.tid } : null;
   const hamtad = Boolean(a.signal && a.kvittenser?.some(k => k.signal_id === a.signal!.id));
   const overforing: Vy['overforing'] = !sistaInl ? 'ej_inlamnat' : hamtad ? 'hamtat' : inlamnad ? 'vantar' : 'andrat_efter';
   const t = tackning(a);
@@ -143,10 +157,10 @@ export function tillVy(a: Arende): Vy {
     ai: { lage: lageNu, modell: lageNu === 'regelstyrd' ? undefined : a.ai.modell, anrop: a.ai.anrop, status: aiStatus, beskrivning: aiBeskrivning, prov },
     oppna,
     senare: a.fragor.filter((f) => f.status === 'senare').map(fragaVy),
-    samtal: a.fragor.filter((f) => f.status !== 'tackt').map((f) => {
+    samtal: a.fragor.filter((f) => f.status !== 'tackt' || f.roll === 'avslut').map((f) => {
       const svar = a.svar.filter((s) => s.fraga_id === f.id);
       const s = svar[svar.length - 1];
-      return { fraga_id: f.id, fraga: f.text, inledning: f.inledning, valjare: f.valjare, kalla: f.kalla, stalld: f.stalld, status: f.status, svar: s ? { text: s.text, typ: s.typ, tid: s.mottaget, andrad: svar.length - 1 } : undefined };
+      return { fraga_id: f.id, roll: f.roll, fraga: f.text, inledning: f.inledning, valjare: f.valjare, kalla: f.kalla, stalld: f.stalld, status: f.status, svar: s ? { text: s.text, typ: s.typ, tid: s.mottaget, andrad: svar.length - 1 } : undefined };
     }),
     dialog: [...new Map(a.svar.map((s) => [s.fraga_id, s])).values()].map((s) => ({ fraga_id: s.fraga_id, fraga: fragaText.get(s.fraga_id) || s.fraga_id, svar: s.text, typ: s.typ, tid: s.mottaget, nyckel: s.nyckel, andrad: a.svar.filter((x) => x.fraga_id === s.fraga_id).length - 1 })),
     bild: bildRader,
@@ -170,5 +184,12 @@ export function tillVy(a: Arende): Vy {
     aterstar: kvar,
     klar: oppna.length === 0 && Boolean(a.samtal_klar),
     avslut: a.samtal_klar?.meddelande || null,
+    fas,
+    framsteg: lageNu === 'regelstyrd' && fas === 'intervju' ? { nr: a.fragor.filter((f) => f.status !== 'tackt').length, ungefar: AVSLUT_EFTER_FRAGOR } : null,
+    syntes: a.syntes && (a.syntes.status !== 'misslyckad' || a.syntes.sammanfattning)
+      ? { id: a.syntes.id, status: a.syntes.status, sammanfattning: a.syntes.sammanfattning, nyckelinsikt: a.syntes.nyckelinsikt, oppet: a.syntes.oppet.map((o) => ({ nyckel: o.nyckel, rubrik: rubrik(o.nyckel), varfor: o.varfor })), tid: a.syntes.tid, valjare: a.syntes.valjare, aktuell: a.syntes.status === 'klar' && a.syntes.bas_revision >= kundRevision(a) }
+      : null,
+    transkript: transkript(a),
+    samtycke: { version: SAMTYCKE.version, text: SAMTYCKE.text },
   };
 }

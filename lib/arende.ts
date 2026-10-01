@@ -668,7 +668,7 @@ export interface NastaResultat {
   ai: { lage: AiLage; anvand: boolean; fallback: boolean; fel?: string; modell?: string; ms?: number; kostnad_usd?: number | null };
 }
 
-function agentFragor(a: Arende): number {
+export function agentFragor(a: Arende): number {
   return a.fragor.filter((f) => f.status !== 'tackt').length;
 }
 
@@ -1251,7 +1251,7 @@ export async function syntes(id: string, opts: { igen?: boolean } = {}): Promise
           if (fasAv(a) === 'avslut') sattFas(a, 'granskning', 'regelstyrd');
           handelse(a, 'syntes', { lage: 'regelstyrd', fallback: true, felklass, forsok: n, id: a.syntes!.id, bas_revision: bas });
         } else {
-          a.syntes = { id: `S${a.revision}`, status: 'misslyckad', bas_revision: bas, revision: a.revision, tid: nu(), valjare: 'ai', modell, anstrangning: prov?.anstrangning, ms: utfall.ms, forsok: n, fel: felklass, sammanfattning: '', nyckelinsikt: '', oppet: [] };
+          a.syntes = { id: `S${a.revision}`, status: 'misslyckad', bas_revision: a.syntes?.bas_revision ?? bas, revision: a.revision, tid: nu(), valjare: 'ai', modell, anstrangning: prov?.anstrangning, ms: utfall.ms, forsok: n, fel: felklass, sammanfattning: a.syntes?.sammanfattning || '', nyckelinsikt: a.syntes?.nyckelinsikt || '', oppet: a.syntes?.oppet || [] };
           handelse(a, 'syntes_fel', { felklass, forsok: n, ms: utfall.ms, skal: utfall.budgetStopp, valideringsfel });
         }
       }
