@@ -46,7 +46,13 @@ test(`verklig intervju (${LAGE}): egna frågor med återkoppling, avrundning, sy
   for (const text of SVAR) {
     const t0 = Date.now();
     await svara(page, text);
-    await expect(page.locator('.aktuell.avslut').or(page.locator('h2.fragetext').first().filter({ hasNotText: forra }))).toBeVisible({ timeout: 300_000 });
+    // Nästa fråga eller avslutskortet (avslutskortet har själv en h2.fragetext, därför ingen .or-lokator).
+    await expect.poll(async () => {
+      if (await page.locator('.aktuell.avslut').count()) return true;
+      const h2 = page.locator('h2.fragetext').first();
+      if ((await h2.count()) === 0) return false; // nästa fråga hämtas fortfarande
+      return ((await h2.textContent()) || '').trim() !== forra;
+    }, { timeout: 300_000, intervals: [500, 1_000, 2_000] }).toBe(true);
     tider.push(Date.now() - t0);
     if (await page.locator('.aktuell.avslut').count()) { avrundat = true; break; }
     forra = await aktuellFraga(page);
@@ -63,7 +69,7 @@ test(`verklig intervju (${LAGE}): egna frågor med återkoppling, avrundning, sy
     expect(f.text, 'inga listmarkörer').not.toMatch(/^\s*[-•*]/m);
   }
   expect(ex.kunduppgifter.length + ex.tillval.length, 'inga noteringar under intervjun').toBe(0);
-  if (!avrundat) {
+  if (!avrundat && !(await page.locator('.aktuell.avslut').count())) {
     const t0 = Date.now();
     await avsluta(page);
     tider.push(Date.now() - t0);
