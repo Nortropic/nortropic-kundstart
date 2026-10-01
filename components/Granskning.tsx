@@ -22,6 +22,8 @@ export default function Granskning({ vy, setVy, efterInlamning }: { vy: Vy; setV
   const [idempotens] = useState(() => nyNyckel());
   const slut = useRef<HTMLDivElement | null>(null);
   const efter = vy.fas === 'inlamnat';
+  // Ändringar efter en inlämning (nya svar, rättelser, material, tillval) lämnas in på nytt, oavsett fas.
+  const andrat = vy.overforing === 'andrat_efter';
   const modellfritt = vy.ai.lage === 'regelstyrd';
   const s = vy.syntes;
 
@@ -83,13 +85,13 @@ export default function Granskning({ vy, setVy, efterInlamning }: { vy: Vy; setV
     }
   }
 
-  const visaSamtycke = !efter || vy.overforing === 'andrat_efter';
+  const visaSamtycke = !efter || andrat;
   const friskrivning = 'Det här är underlag till ert uppdrag, inte ett godkännande av en design, ett köp av tillval eller ett avtal om fler tjänster.';
 
   return (
     <div className="granskning">
-      <h1>{efter ? 'Det ni lämnat' : 'Läs igenom innan ni lämnar in'}</h1>
-      <p>{efter ? vy.overlamning : 'Så här förstod vi det ni berättade. Rätta det som inte stämmer, lägg till material eller tillval om ni vill, och läs igenom hela intervjun längst ned.'}</p>
+      <h1>{efter && !andrat ? 'Det ni lämnat' : 'Läs igenom innan ni lämnar in'}</h1>
+      <p>{efter && !andrat ? vy.overlamning : 'Så här förstod vi det ni berättade. Rätta det som inte stämmer, lägg till material eller tillval om ni vill, och läs igenom hela intervjun längst ned.'}</p>
 
       <section className="syntes" aria-labelledby="rubrik-syntes">
         <h2 id="rubrik-syntes">Sammanfattning</h2>
@@ -134,7 +136,7 @@ export default function Granskning({ vy, setVy, efterInlamning }: { vy: Vy; setV
                   <span className="meta">Sparat {klockslag(r.svar.tid)}{r.svar.andrad > 0 ? ' · ändrat' : ''}</span>
                 </div>
               ) : (
-                <p className="dis liten">{r.roll === 'avslut' ? '(inget tillägg)' : r.status === 'senare' ? '(ni vill återkomma)' : '(inget svar)'}</p>
+                <p className="dis liten">{r.roll === 'avslut' ? '(inget tillägg)' : r.status === 'senare' ? '(inte besvarad; kan tas upp igen under Det som återstår)' : '(inget svar)'}</p>
               )}
             </li>
           ))}
@@ -153,7 +155,7 @@ export default function Granskning({ vy, setVy, efterInlamning }: { vy: Vy; setV
             </label>
             <p id="samtycke-hint" className="samtycke-hint dis liten">{transkriptLast ? '' : 'Rulla igenom hela intervjun ovan först.'}</p>
             <div className="rad">
-              <button type="button" className="knapp" onClick={() => void lamnaIn()} disabled={!bekraftat || lamnar}>{lamnar ? 'Lämnar in …' : efter ? 'Lämna in ändringarna' : 'Lämna in'}</button>
+              <button type="button" className="knapp" onClick={() => void lamnaIn()} disabled={!bekraftat || lamnar}>{lamnar ? 'Lämnar in …' : andrat ? 'Lämna in ändringarna' : 'Lämna in'}</button>
               <button type="button" className="knapp sekundar" onClick={() => void berattaMer()} disabled={lamnar || berattar}>{berattar ? 'Öppnar samtalet …' : 'Jag vill berätta mer'}</button>
             </div>
           </>

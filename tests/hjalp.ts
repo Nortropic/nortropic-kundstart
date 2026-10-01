@@ -87,7 +87,7 @@ export async function tillGranskning(page: Page): Promise<Locator> {
 /** Öppnar ett infällt avsnitt i översikten ("Tillval (valfritt)", "Material (valfritt)") om det är stängt. */
 export async function oppnaAvsnitt(uppdrag: Locator, namn: string) {
   const d = uppdrag.locator('details.avsnitt-infallt', { has: uppdrag.page().locator('summary', { hasText: namn }) });
-  if (!(await d.evaluate((el) => (el as HTMLDetailsElement).open))) await d.locator('summary').click();
+  if (!(await d.evaluate((el) => (el as HTMLDetailsElement).open))) await d.locator(':scope > summary').click();
 }
 
 /** Läser igenom (hoppar till slutet), kryssar i samtycket och lämnar in; väntar på tacksidan. */

@@ -54,7 +54,9 @@ test('startskärm, intervju, avslut, granskning med samtycke, tack och berätta 
   await expect(page.locator('.syntes')).toContainText('”Vi är en liten salong och vill att fler ska hitta oss och boka tid.”');
   await expect(page.locator('.syntes')).toContainText('Ert tillägg: ”Nej, det var allt för nu.”');
   await expect(page.locator('.granskning .uppdrag')).toBeVisible();
-  await expect(page.locator('.transkript .tur')).toHaveCount(2);
+  // Hela intervjun: öppningsfrågan med svar, frågan som stod öppen när kunden avslutade (uppskjuten), avslutsfrågan med tillägget.
+  await expect(page.locator('.transkript .tur')).toHaveCount(3);
+  await expect(page.locator('.transkript .tur').nth(1)).toContainText('inte besvarad');
   await expect(page.locator('.transkript .tur').last()).toContainText('Nej, det var allt för nu.');
   const ruta = page.getByRole('checkbox', { name: /Jag har läst igenom min intervju/ });
   const lamnaIn = page.getByRole('button', { name: 'Lämna in', exact: true });
@@ -72,7 +74,7 @@ test('startskärm, intervju, avslut, granskning med samtycke, tack och berätta 
   let ex = await exportera();
   expect(ex.fas).toBe('granskning');
   expect(ex.syntes?.status).toBe('klar'); expect(ex.syntes?.valjare).toBe('regelstyrd');
-  expect(ex.transkript.map((r) => r.roll)).toEqual(['oppning', 'avslut']);
+  expect(ex.transkript.map((r) => r.roll)).toEqual(['oppning', 'fraga', 'avslut']);
   expect(ex.svar.some((s) => s.text === 'Nej, det var allt för nu.' && ex.omgangar.flatMap((o) => o.fragor).find((f) => f.id === s.fraga_id)?.roll === 'avslut')).toBe(true);
 
   // Inlämningen med samtycket; tacksidan; det inlämnade kan visas igen.
@@ -116,7 +118,9 @@ test('rättelse i granskningen gör sammanfattningen inaktuell; "Uppdatera samma
   await expect(erb.locator('.varde')).toHaveText('Klippning och färgning.');
   await expect(page.locator('.syntes-inaktuell')).toContainText('Ni har ändrat något efter att sammanfattningen skrevs');
   await page.getByRole('button', { name: 'Uppdatera sammanfattningen' }).click();
-  await expect(page.locator('.syntes-inaktuell')).toHaveCount(0, { timeout: 60_000 });
+  await expect.poll(async () => ((await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as Export).syntes!.id, { timeout: 60_000 }).not.toBe(ex1.syntes!.id);
+  await expect(page.locator('.syntes-inaktuell')).toHaveCount(0);
+  await expect(page.locator('.status.vantar')).toHaveCount(0);
   const ex2 = (await (await request.get(`${bas}/api/intern/arenden/${a.arende_id}/export`, { headers: internHuvud() })).json()) as Export;
-  expect(ex2.syntes!.id).not.toBe(ex1.syntes!.id);
+  expect(ex2.syntes!.status).toBe('klar');
 });

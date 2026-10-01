@@ -330,8 +330,11 @@ textarea.ratt-falt:focus, input.falt:focus { outline: 2px solid var(--hav); outl
 .aktuell.avslut .komponera { margin-top: 0.5rem; }
 
 /* Granskningen */
-.granskning { max-width: 52rem; margin: 0 auto; padding: 0.5rem 0 2rem; }
+.granskning { max-width: 52rem; margin: 0 auto; padding: 0.5rem 0 2rem; min-width: 0; }
+/* Vid stark zoom på en smal skärm får långa ord i rubriker och rutor brytas i stället för att ge sidan horisontell rullning. */
+.granskning h1, .granskning h2, .granskning h3, .syntes, .samtycke, .transkript, .uppdrag { overflow-wrap: anywhere; min-width: 0; }
 .syntes { background: var(--yta); border: 1px solid var(--linje); border-radius: 16px; padding: 0.25rem 1.25rem 1rem; margin: 0.75rem 0 1.5rem; }
+@media (max-width: 479px) { .syntes { padding-inline: 0.875rem; } }
 .syntes > h2 { margin-top: 1rem; }
 .syntes-text { font-family: var(--serif); font-size: 1.0625rem; line-height: 1.6; max-width: 62ch; white-space: pre-wrap; }
 .syntes-insikt { font-family: var(--serif); font-style: italic; color: var(--dis); }

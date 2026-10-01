@@ -165,7 +165,7 @@ export default function Intervju({ vy, setVy }: { vy: Vy; setVy: (v: Vy) => void
         </div>
       )}
 
-      {!avslut && besvarade.length > 0 && avslutar !== 'pagar' && (
+      {!avslut && oppen && avslutar !== 'pagar' && (
         <p className="avsluta">
           {avslutar !== 'fraga' ? (
             <>Vill ni avsluta här? <button type="button" className="knapp lank inline" onClick={() => setAvslutar('fraga')} disabled={hamtar}>Avsluta intervjun</button></>
