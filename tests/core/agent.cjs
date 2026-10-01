@@ -26,7 +26,7 @@ async function arende(ai = 'gateway') { const { a } = await A.skapaArende({ kund
 const SVAR1 = 'Vi är en cykelverkstad i Umeå. Vi vill att kunderna ska kunna boka service själva. Vi har domänen testcykel.se hos Loopia. Vi vet inte vad vi har för statistik.';
 async function medSvar(ai = 'gateway') {
   let a = await arende(ai);
-  a = (await A.nasta(a.id)).a;
+  a = (await A.borja(a.id)).a;
   assert.equal(a.fragor[0].id, 'AG1');
   return (await A.registreraSvar(a.id, { fraga_id: 'AG1', text: SVAR1, typ: 'text', idempotens: 'SVARAG1X' })).a;
 }
@@ -50,6 +50,8 @@ function gateway(ut, opts = {}) {
 test('Öppningsfrågan är fast och ställs utan modellanrop', async () => {
   const anrop = gateway(agentUt());
   const a = await arende();
+  assert.equal(A.fasAv(a), 'intro'); assert.equal((await A.nasta(a.id)).fragor.length, 0, 'i introfasen ställs ingen fråga');
+  await A.borja(a.id);
   const r = await A.nasta(a.id);
   assert.equal(anrop.length, 0);
   assert.equal(r.fragor[0].id, 'AG1'); assert.equal(r.fragor[0].kalla, 'agent'); assert.equal(r.fragor[0].valjare, 'regelstyrd');

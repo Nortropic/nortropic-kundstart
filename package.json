@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
     "bank:kontroll": "node verktyg/bank_kontroll.mjs",
-    "test:core": "node tests/core/intag.cjs && node tests/core/agent.cjs",
+    "test:core": "node tests/core/intag.cjs && node tests/core/flode.cjs && node tests/core/agent.cjs",
     "prov": "node scripts/prov.mjs",
     "kontroll:lasfil": "node scripts/lasfil.mjs",
     "kontroll:audit": "node scripts/audit.mjs",

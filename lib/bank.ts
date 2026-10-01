@@ -18,6 +18,14 @@ export interface Bank {
 
 export const BANK = bankJson as Bank;
 
+/** Alla nycklar i intervjuguiden: grundfrågorna och följdreglernas frågor, i bankens ordning. */
+export const BANK_NYCKLAR: string[] = [...new Set([...BANK.grund.map((g) => g.nyckel), ...BANK.foljdregler.flatMap((r) => r.fragor.map((f) => f.nyckel))])];
+
+/** Följdregeln som en nyckel hör till, om någon. */
+export function regelForNyckel(nyckel: string): BankRegel | undefined {
+  return BANK.foljdregler.find((r) => r.fragor.some((f) => f.nyckel === nyckel));
+}
+
 const REGLER = BANK.foljdregler.map((r) => ({ ...r, rx: new RegExp(r.monster, r.flaggor.includes('i') ? 'iu' : 'u') }));
 const HEMLIGT = new RegExp(BANK.hemligt.monster, 'iu');
 // Pythons (?i)-prefix blir JS-flaggan i.
@@ -122,4 +130,5 @@ const RUBRIKER: Record<string, string> = {
   migrering_vard: 'Var den befintliga webbplatsen ligger',
   okant_vem: 'Vem som kan svara',
   besok: 'Besök hos er',
+  avslut: 'Sista tankar',
 };

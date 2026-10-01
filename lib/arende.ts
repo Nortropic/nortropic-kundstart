@@ -14,7 +14,8 @@ import { lasProv, provTillatet, turTimeoutMs, type ProvVal } from './provlage';
 import { signalera } from './overlamning';
 import { samlaBehov, laggBehov, tackning, behovMedStatus } from './tackning';
 import { TILLVAL_IDS, annatId, arAnnat } from './tillval';
-import type { AiLage, Arende, Fakta, FaktaAi, Fraga, Lank, Material, Rattelse, Svar, Tillval, TillvalDigitala, TillvalKundval } from './typer';
+import type { AiLage, Arende, Fakta, FaktaAi, Fas, FasByte, Fraga, Lank, Material, Rattelse, Svar, Syntes, Tillval, TillvalDigitala, TillvalKundval } from './typer';
+import { SAMTYCKE } from './samtycke';
 
 export class Vagrad extends Error {
   status: number;
@@ -37,8 +38,16 @@ const LAS_MS = 80_000;
 const MAX_RESEARCH = 6;
 const MAX_ANNAT = 8;
 const MAX_DOMANKONTROLLER_PER_TIMME = 10;
-// Samtalet får avslutas av agenten när viktiga områden är täckta eller efter så här många frågor.
-const AVSLUT_EFTER_FRAGOR = 14;
+// Samtalet får avslutas (av intervjuaren, standardlistan eller kunden) när inga viktiga områden står orörda och minst
+// MINST_FRAGOR frågor ställts, eller efter AVSLUT_EFTER_FRAGOR frågor. Miljövariabeln finns för verkliga modellprov som
+// behöver en kort intervju; golvet behövs eftersom förifyllda uppgifter räknas som täckta.
+export const AVSLUT_EFTER_FRAGOR = Math.max(1, Number(process.env.KUNDSTART_AVSLUT_EFTER_FRAGOR) || 14);
+const MINST_FRAGOR = 6;
+/** Hela svaret säger bara "vet inte": sparas som ett ärligt okänt (typ vet_inte), inte som en uppgift. */
+const VET_INTE_HELT = /^(?:vi |jag )?(?:vet (?:inte|ej)(?: riktigt)?|har ingen aning|ingen aning)[.!…]*$/i;
+/** Avslutsfrågan (sista tankar): samtalets ram, inte ett bankämne. Intervjuaren får formulera den själv. */
+export const AVSLUT_FRAGA = { nyckel: 'avslut', omrade: 'H', text: 'Är det något mer ni vill ta upp innan vi går vidare?', paverkar: 'det sista ni vill att vi tar med' };
+export const OPPNING_INLEDNING = 'Tack för att ni tar er tid. Vi börjar med det viktigaste.';
 
 export const nu = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 const arendeStig = (id: string) => `arenden/${id}.json`;
@@ -77,6 +86,37 @@ function handelse(a: Arende, typ: string, detaljer?: Record<string, unknown>) {
 function bump(a: Arende) {
   a.revision += 1;
   a.uppdaterad = nu();
+}
+
+// ---------- faser ----------
+
+/** Kundens senaste ändring: svar, rättelse, material eller tillval. Frågor som skapas räknas inte. */
+export function kundRevision(a: Arende): number {
+  return Math.max(0, ...a.svar.map((s) => s.revision), ...a.rattelser.map((r) => r.revision), ...a.material.map((m) => m.revision), ...(a.tillval || []).map((t) => t.revision));
+}
+
+/** Har kunden (eller Digitala med returfrågor) ändrat något efter en inlämning eller en sammanfattning? */
+export function andratEfter(a: Arende, bas: { revision: number; tid?: string }): boolean {
+  return a.fragor.some((f) => f.status === 'stalld' && (f.kalla === 'returfraga' || (f.oppnad_revision || 0) > bas.revision || (bas.tid !== undefined && f.stalld > bas.tid))) || kundRevision(a) > bas.revision;
+}
+
+/** Intervjuns fas. Äldre dokument utan fältet härleds ur det som finns; fasen skrivs först vid nästa övergång. */
+export function fasAv(a: Arende): Fas {
+  if (a.fas) return a.fas;
+  const sista = a.inlamningar[a.inlamningar.length - 1];
+  if (sista && !andratEfter(a, sista)) return 'inlamnat';
+  if (a.fragor.length === 0 && a.svar.length === 0) return 'intro';
+  if (a.samtal_klar && !a.fragor.some((f) => f.status === 'stalld')) return 'avslut';
+  return 'intervju';
+}
+
+export function sattFas(a: Arende, till: Fas, av: FasByte['av']) {
+  const fran = a.fas ?? null;
+  if (fran === till) return;
+  a.fas = till;
+  (a.fas_historik ??= []).push({ fran, till, tid: nu(), revision: a.revision, av });
+  if (a.fas_historik.length > 100) a.fas_historik.splice(0, a.fas_historik.length - 100);
+  handelse(a, 'fas', { fran, till, av });
 }
 
 // ---------- skapa, läsa, länkar ----------
@@ -226,7 +266,7 @@ export function bild(a: Arende): BildRad[] {
     const b = kund.get(nyckel);
     if (!b || b.rev <= v.rev) kund.set(nyckel, v);
   };
-  for (const s of a.svar) lagg(s.nyckel, { varde: s.typ === 'vet_inte' ? 'Vet inte – behöver följas upp' : s.text, tid: s.mottaget, rev: s.revision, fraga_id: s.fraga_id, kalla: 'kundens svar ' + s.fraga_id });
+  for (const s of a.svar) if (s.nyckel !== AVSLUT_FRAGA.nyckel) lagg(s.nyckel, { varde: s.typ === 'vet_inte' ? 'Vet inte – behöver följas upp' : s.text, tid: s.mottaget, rev: s.revision, fraga_id: s.fraga_id, kalla: 'kundens svar ' + s.fraga_id });
   for (const u of a.uppgifter || []) if (u.giltig && u.status === 'kunden uppger') lagg(u.nyckel, { varde: u.varde, tid: u.tid, rev: u.kalla_revision + 0.25, fraga_id: u.kalla_typ === 'svar' ? u.kalla_id : undefined, kalla: u.kalla_typ === 'svar' ? 'era ord i samtalet' : 'ert material', citat: u.citat });
   for (const r of a.rattelser) lagg(r.nyckel, { varde: r.varde, tid: r.mottaget, rev: r.revision + 0.5, kalla: 'kundens rättelse' });
   for (const [nyckel, k] of kund) {
@@ -293,8 +333,16 @@ export function oppenFraga(a: Arende): Fraga | undefined {
  */
 export function aterstar(a: Arende): { viktiga: number; ovriga: number } {
   const grund = new Set(BANK.grund.map((g) => g.nyckel));
-  const t = tackning(a).filter((x) => x.status === 'inte_undersokt' && grund.has(x.nyckel));
+  // Nycklar som intervjuaren markerat som täckta i en tur räknas inte som orörda (exportens täckning rörs inte).
+  const tackta = new Set((a.berorda || []).filter((b) => b.lage === 'tackt').map((b) => b.nyckel));
+  const t = tackning(a).filter((x) => x.status === 'inte_undersokt' && grund.has(x.nyckel) && !tackta.has(x.nyckel));
   return { viktiga: t.filter((x) => x.prio === 1).length, ovriga: t.filter((x) => x.prio > 1).length };
+}
+
+/** Avrundning tillåts när inga viktiga områden står orörda och minst MINST_FRAGOR frågor ställts, eller vid frågegränsen. */
+export function farAvrunda(a: Arende): boolean {
+  const n = agentFragor(a);
+  return n >= AVSLUT_EFTER_FRAGOR || (n >= MINST_FRAGOR && aterstar(a).viktiga === 0);
 }
 
 /** En generell ”vem kan veta?”-följd behövs bara medan dess källsvar är okänt. */
@@ -324,6 +372,8 @@ function tillvalSammanfattning(a: Arende, ids: string[]): string {
 
 export async function registreraSvar(id: string, p: { fraga_id: string; text: string; typ: Svar['typ']; idempotens: string }): Promise<{ a: Arende; ny: boolean }> {
   const text0 = (p.typ === 'vet_inte' ? 'Vet inte' : String(p.text || '')).replace(/\r\n/g, '\n').trim();
+  // Ett helt svar som bara säger "vet inte" är ett ärligt okänt, också när det skrivs i ord i stället för med en knapp.
+  const typ: Svar['typ'] = p.typ === 'text' && text0.length <= 40 && VET_INTE_HELT.test(text0) ? 'vet_inte' : p.typ;
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(p.idempotens)) throw new Vagrad('idempotensnyckel saknas');
   if (text0.length > MAX_SVAR_TECKEN) throw new Vagrad(`svaret är längre än ${MAX_SVAR_TECKEN} tecken`);
   if (serUtSomHemlighet(text0)) throw new Vagrad('svaret ser ut att innehålla ett lösenord eller en nyckel; ta bort det, så ordnar vi åtkomst på säker väg', 422);
@@ -336,29 +386,38 @@ export async function registreraSvar(id: string, p: { fraga_id: string; text: st
     let text = text0;
     // Tillvalsfrågan besvaras med kundens egna val i kontrollerna; texten sammanställs av servern ur det sparade läget
     // (inte ur klientens påstående), med kundens eventuella kommentar ordagrant efter.
-    if (f.typ === 'tillval' && p.typ === 'val') text = 'Val i kontrollerna: ' + tillvalSammanfattning(a, f.tillval || []) + (text0 ? '\nKommentar: ' + text0 : '');
-    else if (p.typ !== 'vet_inte' && !text) throw new Vagrad('svaret är tomt');
-    if (f.typ === 'val' && p.typ === 'val' && !(f.alternativ || []).includes(text)) throw new Vagrad('okänt alternativ');
+    if (f.typ === 'tillval' && typ === 'val') text = 'Val i kontrollerna: ' + tillvalSammanfattning(a, f.tillval || []) + (text0 ? '\nKommentar: ' + text0 : '');
+    else if (typ !== 'vet_inte' && !text) throw new Vagrad('svaret är tomt');
+    if (f.typ === 'val' && typ === 'val' && !(f.alternativ || []).includes(text)) throw new Vagrad('okänt alternativ');
     const tidigare = [...a.svar].reverse().find((x) => x.fraga_id === f.id);
     // Samma text igen (annan flik, återförsök, dubbelklick med ny nyckel): ingen ny rad. Annan text på en redan
     // besvarad fråga: ett ändrat svar som ersätter det förra synligt, aldrig en dubblett.
-    if (tidigare && tidigare.text === text && tidigare.typ === p.typ) return null;
+    if (tidigare && tidigare.text === text && tidigare.typ === typ) return null;
     if (tidigare && Date.now() - new Date(tidigare.mottaget).getTime() < MIN_MS_MELLAN_SVAR && tidigare.text === text) return null;
+    const fasFore = fasAv(a); // före svaret: efteråt räknas svaret som en ändring efter inlämningen
     bump(a);
-    const s: Svar = { fraga_id: f.id, nyckel: f.nyckel, omrade: f.omrade, text, typ: p.typ, mottaget: nu(), revision: a.revision, idempotens: p.idempotens, ersatter: tidigare ? tidigare.revision : undefined };
+    const s: Svar = { fraga_id: f.id, nyckel: f.nyckel, omrade: f.omrade, text, typ, mottaget: nu(), revision: a.revision, idempotens: p.idempotens, ersatter: tidigare ? tidigare.revision : undefined };
     const rad = bild(a).find(b => b.nyckel === 'erbjudande');
     a.svar.push(s);
     f.status = 'besvarad';
-    // Ett nytt kundsvar öppnar ett avslutat samtal igen: agenten får ta ställning till det nya.
-    if (a.samtal_klar) a.samtal_klar = null;
+    if (f.roll !== 'avslut') {
+      // Ett nytt kundsvar öppnar ett avslutat samtal igen: intervjuaren får ta ställning till det nya. Sista tankar på
+      // avslutsfrågan gör det inte: samtalet förblir avslutat och sammanfattningen tar med svaret.
+      if (a.samtal_klar) a.samtal_klar = null;
+      if (a.syntes && a.syntes.status === 'klar') a.syntes.status = 'inaktuell';
+      const andraOppna = a.fragor.some((x) => x.status === 'stalld' && x.id !== f.id);
+      // Returfrågor och åter öppnade frågor efter en sammanfattning: tillbaka till granskningen när inget mer står öppet.
+      if (a.syntes && !andraOppna && (f.kalla === 'returfraga' || f.oppnad_revision !== undefined || fasFore === 'granskning' || fasFore === 'inlamnat')) sattFas(a, 'granskning', 'kund');
+      else if (fasFore !== 'intervju') sattFas(a, 'intervju', 'kund');
+    }
     const behov = a.behov?.find(b => b.id === f.id);
-    if (behov) behov.status = p.typ === 'vet_inte' || p.typ === 'atkomst_saknas' ? 'oppen' : 'besvarad';
-    if (behov && (p.typ === 'vet_inte' || p.typ === 'atkomst_saknas')) f.status = 'senare';
+    if (behov) behov.status = typ === 'vet_inte' || typ === 'atkomst_saknas' ? 'oppen' : 'besvarad';
+    if (behov && (typ === 'vet_inte' || typ === 'atkomst_saknas')) f.status = 'senare';
     samlaBehov(a, s, rad ? {varde:rad.varde,kalla:rad.kalla,typ:rad.typ === 'kund' ? 'svar' : rad.typ} : undefined);
     signalera(a);
     for (const t of a.fakta_ai) if (t.nyckel === f.nyckel && t.giltig) { t.giltig = false; t.forkastad_skal = 'kundens senare svar ' + f.id; }
     for (const u of a.uppgifter || []) if (u.nyckel === f.nyckel && u.giltig && u.status === 'tolkning') { u.giltig = false; u.forkastad_skal = 'kundens senare svar ' + f.id; }
-    if (p.typ !== 'vet_inte') {
+    if (typ !== 'vet_inte') {
       for (const u of utlosta(text)) {
         if (u.negerad) {
           a.foljdregler_negerade = a.foljdregler_negerade || [];
@@ -372,7 +431,7 @@ export async function registreraSvar(id: string, p: { fraga_id: string; text: st
       if (okant && !a.foljdregler_utlosta.some((x) => x.regel === 'okant' && x.fraga_id === f.id)) a.foljdregler_utlosta.push({ regel: 'okant', fraga_id: f.id, traff: 'vet inte', tid: nu() });
     }
     aktualiseraOkant(a);
-    handelse(a, 'svar', { fraga_id: f.id, typ: p.typ, tecken: text.length });
+    handelse(a, 'svar', { fraga_id: f.id, typ: typ, tecken: text.length });
     ny = true;
     return a;
   });
@@ -401,6 +460,7 @@ export async function oppnaIgen(id: string, fragaId: string): Promise<Arende> {
     f.stalld = nu();
     f.oppnad_revision = a.revision;
     if (a.samtal_klar) a.samtal_klar = null;
+    sattFas(a, 'intervju', 'kund');
     const behov = a.behov?.find(b => b.id === f.id);
     if (behov) { behov.status = 'oppen'; for (const t of a.fakta_ai) if (t.nyckel === f.nyckel && t.giltig) {t.giltig = false; t.forkastad_skal = 'kunden öppnade behovet igen';} }
     handelse(a, 'oppnad_igen', { fraga_id: f.id });
@@ -678,12 +738,11 @@ function tillampaAgent(a: Arende, ut: AgentUtdata, bas: number, modell?: string)
     lista.push({ id: `R${rev}_${lista.length + 1}`, fraga: r.fraga, varfor: r.varfor, nyckel: r.nyckel || undefined, kalla_typ: r.kalla_typ, kalla_id: r.kalla_id, citat: r.citat, status: 'bestalld', revision: rev, tid: nu(), modell });
     research++;
   }
-  // Avslut godtas när inga viktiga områden står helt outredda eller när samtalet redan är långt.
-  const viktigaKvar = aterstar(a).viktiga;
-  const klar = ut.klar && (viktigaKvar === 0 || agentFragor(a) >= AVSLUT_EFTER_FRAGOR);
+  // Avslut godtas när inga viktiga områden står orörda (och samtalet inte är alldeles kort) eller när det redan är långt.
+  const klar = ut.klar && farAvrunda(a);
   let fraga: string | null = null;
   if (klar) {
-    a.samtal_klar = { revision: rev, tid: nu(), meddelande: ut.aterkoppling, valjare: 'ai' };
+    fraga = stangSamtal(a, { meddelande: ut.aterkoppling, valjare: 'ai' });
   } else if (ut.fraga) {
     const n = Math.max(0, ...a.fragor.filter((f) => /^AG\d+$/.test(f.id)).map((f) => Number(f.id.slice(2)))) + 1;
     a.omgang += 1;
@@ -695,13 +754,77 @@ function tillampaAgent(a: Arende, ut: AgentUtdata, bas: number, modell?: string)
   return { nyaUppgifter, tillval, rek, tackning: tack, research, behov, fraga, klar };
 }
 
-/** Reservvägen: nästa fråga ur Digitalas standardlista (behov, följdregler, luckor). */
+function nastaAgNr(a: Arende): number {
+  return Math.max(0, ...a.fragor.filter((f) => /^AG\d+$/.test(f.id)).map((f) => Number(f.id.slice(2)))) + 1;
+}
+
+/** Avslutar samtalet: avslutsmeddelandet och avslutsfrågan (sista tankar) blir sista turen, fasen blir avslut. */
+function stangSamtal(a: Arende, p: { meddelande: string; fragetext?: string; valjare: 'ai' | 'regelstyrd' | 'kund' }): string {
+  a.samtal_klar = { revision: a.revision, tid: nu(), meddelande: p.meddelande, valjare: p.valjare };
+  const text = (p.fragetext || '').replace(/\s+/g, ' ').trim().slice(0, 400) || AVSLUT_FRAGA.text;
+  const n = nastaAgNr(a);
+  a.omgang += 1;
+  const f: Fraga = { id: `AG${n}`, roll: 'avslut', omrade: AVSLUT_FRAGA.omrade, nyckel: AVSLUT_FRAGA.nyckel, text, paverkar: AVSLUT_FRAGA.paverkar, kalla: 'agent', typ: 'oppen', inledning: p.meddelande || undefined, omgang: a.omgang, stalld: nu(), status: 'stalld', valjare: p.valjare === 'ai' ? 'ai' : 'regelstyrd' };
+  a.fragor.push(f);
+  sattFas(a, 'avslut', p.valjare);
+  return f.id;
+}
+
+const OMRADEN_LAGT: Record<string, string> = { A: 'verksamheten och erbjudandet', B: 'besökarna', C: 'hur ni arbetar', D: 'system och åtkomster', E: 'uttryck och innehåll', F: 'synlighet och mätning', G: 'förvaltningen', H: 'ramarna' };
+
+/** Standardlistans avslutsmeddelande: fast text ur ärendets egna tal, inga löften. */
+function avslutstextRegelstyrd(a: Arende): string {
+  const besvarade = new Set(a.svar.map((s) => s.fraga_id));
+  const fragor = a.fragor.filter((f) => besvarade.has(f.id) && f.roll !== 'avslut');
+  const n = fragor.length;
+  const omraden = [...new Set(fragor.map((f) => OMRADEN_LAGT[f.omrade]).filter(Boolean))].slice(0, 3);
+  const om = omraden.length ? ' om ' + (omraden.length > 1 ? omraden.slice(0, -1).join(', ') + ' och ' + omraden[omraden.length - 1] : omraden[0]) : '';
+  const oppna = aterstar(a).viktiga > 0 ? 'Några områden står fortfarande öppna; de visas i sammanfattningen och kan kompletteras senare. ' : '';
+  return `Tack. Ni har svarat på ${n} ${n === 1 ? 'fråga' : 'frågor'}${om}. ${oppna}Nu sammanställer vi det ni berättat så att ni kan läsa igenom det.`;
+}
+
+export interface TranskriptRad { fraga_id: string; roll: 'oppning' | 'fraga' | 'avslut'; inledning?: string; fraga: string; stalld: string; valjare: 'regelstyrd' | 'ai'; status: string; svar: { text: string; typ: string; tid: string; andrad: number } | null }
+
+/** Hela intervjun i ordning, ordagrant: intervjuarens tur (återkoppling och fråga) och kundens svar. */
+export function transkript(a: Arende): TranskriptRad[] {
+  return a.fragor.filter((f) => f.status !== 'tackt' || f.roll === 'avslut').map((f) => {
+    const svar = a.svar.filter((s) => s.fraga_id === f.id);
+    const s = svar[svar.length - 1];
+    return { fraga_id: f.id, roll: f.roll || 'fraga', inledning: f.inledning, fraga: f.text, stalld: f.stalld, valjare: f.valjare, status: f.status, svar: s ? { text: s.text, typ: s.typ, tid: s.mottaget, andrad: svar.length - 1 } : null };
+  });
+}
+
+function kortText(s: string, max: number): string {
+  const t = s.replace(/\s+/g, ' ').trim();
+  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+}
+
+/** Deterministisk sammanställning utan modell: kundens svar ordagrant under bankens rubriker, och det som återstår. */
+export function syntesRegelstyrd(a: Arende): Pick<Syntes, 'sammanfattning' | 'nyckelinsikt' | 'oppet'> {
+  const ordning = [...BANK.grund].sort((x, y) => x.prio - y.prio || x.id.localeCompare(y.id)).map((g) => g.nyckel);
+  const senaste = new Map<string, Svar>();
+  for (const s of a.svar) if (s.typ === 'text' || s.typ === 'val') senaste.set(s.nyckel, s);
+  const rader: string[] = [];
+  for (const nyckel of [...ordning, ...[...senaste.keys()].filter((k) => !ordning.includes(k) && k !== AVSLUT_FRAGA.nyckel)]) {
+    const s = senaste.get(nyckel);
+    if (!s || rader.length >= 6) continue;
+    rader.push(`${rubrik(nyckel)}: ”${kortText(s.text, 300)}”`);
+  }
+  const sista = senaste.get(AVSLUT_FRAGA.nyckel);
+  if (sista) rader.push(`Ert tillägg: ”${kortText(sista.text, 300)}”`);
+  const paverkar = new Map(BANK.grund.map((g) => [g.nyckel, g.paverkar.replace(/\s*\([^)]*\)/g, '').replace(/\s*;.*$/, '').trim()]));
+  const oppet = tackning(a).filter((t) => t.status === 'inte_undersokt' || t.status === 'kunden_vet_inte' || t.status === 'aterkom_senare').sort((x, y) => x.prio - y.prio).slice(0, 8).map((t) => ({ nyckel: t.nyckel, varfor: paverkar.get(t.nyckel) || t.fraga }));
+  return { sammanfattning: ['Det ni berättat, i era egna ord:', ...rader].join('\n\n'), nyckelinsikt: '', oppet };
+}
+
+function skrivSyntes(a: Arende, d: Pick<Syntes, 'sammanfattning' | 'nyckelinsikt' | 'oppet'>, meta: { valjare: Syntes['valjare']; bas_revision: number; modell?: string; anstrangning?: string; ms?: number; avvisade?: number }) {
+  a.syntes = { id: `S${a.revision}`, status: 'klar', bas_revision: meta.bas_revision, revision: a.revision, tid: nu(), valjare: meta.valjare, modell: meta.modell, anstrangning: meta.anstrangning, ms: meta.ms, forsok: (a.syntes?.status === 'misslyckad' ? a.syntes.forsok : 0) + 1, sammanfattning: d.sammanfattning, nyckelinsikt: d.nyckelinsikt, oppet: d.oppet, avvisade: meta.avvisade };
+}
+
+/** Reservvägen: nästa fråga ur Digitalas standardlista (behov, följdregler, luckor); rundar av med samma regel som intervjuaren. */
 function tillampaRegelstyrd(a: Arende, inledning?: string): string | null {
   const k = kandidater(a).find((x) => !x.senare);
-  if (!k) {
-    a.samtal_klar = { revision: a.revision, tid: nu(), meddelande: '', valjare: 'regelstyrd' };
-    return null;
-  }
+  if (!k || farAvrunda(a)) return stangSamtal(a, { meddelande: avslutstextRegelstyrd(a), valjare: 'regelstyrd' });
   const senare = a.fragor.find((f) => f.id === k.id && f.status === 'senare');
   if (senare) a.fragor.splice(a.fragor.indexOf(senare), 1);
   a.omgang += 1;
@@ -768,19 +891,16 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
     const fr = a.fragor.filter((f) => f.status === 'stalld');
     return { a, fragor: fr, klar: fr.length === 0 && Boolean(a.samtal_klar), meddelande: '', ai: { lage: a.ai.lage, anvand: false, fallback: false }, ...extra };
   };
-  if (forsta.fragor.some((f) => f.status === 'stalld')) return vila(forsta);
-  if (forsta.samtal_klar && !opts.fortsatt) return vila(forsta);
-  if (forsta.fragor.length === 0 && forsta.svar.length === 0) {
-    const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
-      if (a.fragor.length) return null;
-      bump(a);
-      a.omgang += 1;
-      a.fragor.push({ ...OPPNING, kalla: 'agent', typ: 'oppen', omgang: a.omgang, stalld: nu(), status: 'stalld', valjare: 'regelstyrd' });
-      handelse(a, 'nasta', { lage: 'fast oppning', fraga: OPPNING.id });
-      return a;
-    });
-    return vila(r.data);
-  }
+  /** Intervjun går vidare bara i intervjufasen utan öppen fråga, eller på kundens "berätta mer" (då får avslutsfrågan stå öppen). */
+  const kanGaVidare = (a: Arende) => {
+    const oppna = a.fragor.filter((f) => f.status === 'stalld');
+    const fas = fasAv(a);
+    if (oppna.length && !(opts.fortsatt && oppna.every((f) => f.roll === 'avslut'))) return false;
+    if (fas === 'intro') return false;
+    if (fas !== 'intervju' && !opts.fortsatt) return false;
+    return true;
+  };
+  if (!kanGaVidare(forsta)) return vila(forsta);
 
   let lage: AiLage = effektivtLage(forsta.ai.lage);
   let skal: string | undefined;
@@ -792,14 +912,22 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
   let upptaget = false;
   const las = await uppdateraDok<Arende>(arendeStig(id), (a) => {
     upptaget = false;
-    if (a.fragor.some((f) => f.status === 'stalld') || (a.samtal_klar && !opts.fortsatt)) { upptaget = true; return null; }
+    if (!kanGaVidare(a)) { upptaget = true; return null; }
     const p = a.ai.pagaende;
     if (p && Date.parse(p.till) > Date.now()) { upptaget = true; return null; }
     a.ai.pagaende = { id: lasId, till: new Date(Date.now() + (lage === 'claude-cli' ? turTimeoutMs(lasProv().anstrangning) + 15_000 : LAS_MS)).toISOString() };
-    if (opts.fortsatt && a.samtal_klar) { bump(a); a.samtal_klar = null; handelse(a, 'samtal_fortsatt', {}); }
+    if (opts.fortsatt && (a.samtal_klar || fasAv(a) !== 'intervju')) {
+      // "Jag vill berätta mer": avslutsfrågan stängs, samtalet öppnas igen och sammanfattningen blir inaktuell.
+      bump(a);
+      for (const f of a.fragor) if (f.status === 'stalld' && f.roll === 'avslut') f.status = 'tackt';
+      a.samtal_klar = null;
+      if (a.syntes && a.syntes.status === 'klar') a.syntes.status = 'inaktuell';
+      sattFas(a, 'intervju', 'kund');
+      handelse(a, 'samtal_fortsatt', {});
+    }
     return a;
   });
-  if (upptaget) return vila(las.data, { vantar: !las.data.fragor.some((f) => f.status === 'stalld') && !las.data.samtal_klar });
+  if (upptaget) return vila(las.data, { vantar: !las.data.fragor.some((f) => f.status === 'stalld') && fasAv(las.data) === 'intervju' });
   let korning: Anropsutfall | null = null;
   try {
     forsta = las.data;
@@ -905,6 +1033,82 @@ export async function nasta(id: string, opts: { fortsatt?: boolean } = {}): Prom
   }
 }
 
+// ---------- intervjuns faser: börja, avsluta, granska, sammanfatta ----------
+
+/** Kunden börjar intervjun: öppningsfrågan ställs utan modellanrop. Idempotent: bara i introfasen. */
+export async function borja(id: string): Promise<{ a: Arende; ny: boolean }> {
+  let ny = false;
+  const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+    ny = false;
+    if (fasAv(a) !== 'intro' || a.fragor.length) return null;
+    bump(a);
+    a.omgang += 1;
+    a.fragor.push({ ...OPPNING, roll: 'oppning', inledning: OPPNING_INLEDNING, kalla: 'agent', typ: 'oppen', omgang: a.omgang, stalld: nu(), status: 'stalld', valjare: 'regelstyrd' });
+    sattFas(a, 'intervju', 'kund');
+    handelse(a, 'nasta', { lage: 'fast oppning', fraga: OPPNING.id });
+    ny = true;
+    return a;
+  });
+  return { a: r.data, ny };
+}
+
+/** Kunden avslutar intervjun själv: en obesvarad fråga skjuts upp (kan tas upp i granskningen) och samtalet rundas av. */
+export async function avsluta(id: string): Promise<{ a: Arende; ny: boolean }> {
+  let ny = false;
+  const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+    ny = false;
+    if (fasAv(a) !== 'intervju') return null;
+    bump(a);
+    for (const f of a.fragor) if (f.status === 'stalld') { f.status = 'senare'; handelse(a, 'senare', { fraga_id: f.id, skal: 'kunden avslutade intervjun' }); }
+    stangSamtal(a, { meddelande: avslutstextRegelstyrd(a), valjare: 'kund' });
+    ny = true;
+    return a;
+  });
+  return { a: r.data, ny };
+}
+
+export interface SyntesResultat { a: Arende; utford: boolean; fallback: boolean; vantar?: boolean; forkastad?: boolean; fel?: string }
+
+/** Kunden går vidare till granskningen: en obesvarad avslutsfråga stängs, sedan skrivs sammanfattningen. */
+export async function granska(id: string, opts: { igen?: boolean } = {}): Promise<SyntesResultat> {
+  await uppdateraDok<Arende>(arendeStig(id), (a) => {
+    if (fasAv(a) !== 'avslut') return null;
+    const oppna = a.fragor.filter((f) => f.status === 'stalld');
+    if (!oppna.length) return null;
+    bump(a);
+    for (const f of oppna) f.status = f.roll === 'avslut' ? 'tackt' : 'senare';
+    handelse(a, 'granskning_begard', { stangda: oppna.map((f) => f.id) });
+    return a;
+  });
+  return syntes(id, opts);
+}
+
+/**
+ * Sammanfattningen efter avslutad intervju. Idempotent: en aktuell sammanfattning skrivs inte om utan `igen`. I det
+ * modellfria läget sammanställs kundens egna svar deterministiskt.
+ */
+export async function syntes(id: string, opts: { igen?: boolean } = {}): Promise<SyntesResultat> {
+  const forsta = await lasArende(id);
+  if (!forsta) throw new Vagrad('ärendet finns inte', 404);
+  const fas = fasAv(forsta);
+  const tillaten = fas === 'avslut' || (opts.igen && (fas === 'granskning' || fas === 'inlamnat'));
+  if (!tillaten || forsta.fragor.some((f) => f.status === 'stalld')) return { a: forsta, utford: false, fallback: false };
+  if (!opts.igen && forsta.syntes?.status === 'klar' && forsta.syntes.bas_revision >= kundRevision(forsta)) {
+    if (fas !== 'avslut') return { a: forsta, utford: false, fallback: false };
+    const r = await uppdateraDok<Arende>(arendeStig(id), (a) => { if (fasAv(a) !== 'avslut') return null; bump(a); sattFas(a, 'granskning', 'kund'); return a; });
+    return { a: r.data, utford: false, fallback: false };
+  }
+  const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+    const bas = a.revision;
+    bump(a);
+    skrivSyntes(a, syntesRegelstyrd(a), { valjare: 'regelstyrd', bas_revision: bas });
+    if (fasAv(a) === 'avslut') sattFas(a, 'granskning', 'kund');
+    handelse(a, 'syntes', { lage: 'regelstyrd', id: a.syntes!.id, bas_revision: bas });
+    return a;
+  });
+  return { a: r.data, utford: true, fallback: false };
+}
+
 // ---------- material ----------
 
 export async function laggMaterialFil(id: string, p: { filnamn: string; mime: string; data: ArrayBuffer; sha256: string; beskrivning?: string; idempotens: string }): Promise<{ a: Arende; ny: boolean }> {
@@ -982,14 +1186,27 @@ export async function taBortMaterial(id: string, mid: string): Promise<Arende> {
 
 // ---------- inlämning ----------
 
-export async function lamnaIn(id: string): Promise<Arende> {
+export interface SamtyckeKropp { version: string; text: string; bekraftat: boolean; transkript_last: boolean }
+
+/**
+ * Inlämningen kräver kundens samtycke med exakt den text som visades (samtycke/1) och att intervjun är genomläst
+ * (fasen granskning, eller en ny inlämning efter ändringar). Idempotent på klientens nyckel.
+ */
+export async function lamnaIn(id: string, p: { idempotens: string; samtycke: SamtyckeKropp }): Promise<Arende> {
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(p?.idempotens || '')) throw new Vagrad('idempotensnyckel saknas');
+  const s = p.samtycke;
+  if (!s || s.version !== SAMTYCKE.version || s.text !== SAMTYCKE.text || s.bekraftat !== true || s.transkript_last !== true) throw new Vagrad('samtyckestexten stämmer inte med den som visades; ladda om sidan och läs igenom intervjun igen', 422);
   const r = await uppdateraDok<Arende>(arendeStig(id), (a) => {
+    if (a.inlamningar.some((i) => i.samtycke?.idempotens === p.idempotens)) return null;
+    const fas = fasAv(a);
+    if (fas !== 'granskning' && fas !== 'inlamnat') throw new Vagrad('intervjun behöver läsas igenom innan den lämnas in', 409);
     const sista = a.inlamningar[a.inlamningar.length - 1];
     if (sista && sista.revision === a.revision) return null;
     bump(a);
-    a.inlamningar.push({ tid: nu(), revision: a.revision, svar: a.svar.length, material: a.material.filter((m) => m.status === 'mottagen').length });
+    a.inlamningar.push({ tid: nu(), revision: a.revision, svar: a.svar.length, material: a.material.filter((m) => m.status === 'mottagen').length, samtycke: { version: SAMTYCKE.version, text: SAMTYCKE.text, tid: nu(), revision: a.revision, syntes_id: a.syntes?.status === 'klar' ? a.syntes.id : null, transkript_last: true, idempotens: p.idempotens } });
     signalera(a, 'inlamning');
-    handelse(a, 'inlamnad', { svar: a.svar.length });
+    sattFas(a, 'inlamnat', 'kund');
+    handelse(a, 'inlamnad', { svar: a.svar.length, samtycke: SAMTYCKE.version });
     return a;
   });
   return r.data;
@@ -1031,6 +1248,11 @@ export function exportPaket(a: Arende) {
     research: a.research || [],
     tackning_agent: (a.tackning_agent || []).filter((m) => m.giltig),
     samtal_klar: a.samtal_klar || null,
+    fas: fasAv(a),
+    fas_historik: a.fas_historik || [],
+    syntes: a.syntes ? { ...a.syntes } : null,
+    transkript: transkript(a),
+    berorda: a.berorda || [],
     material: a.material.filter((m) => m.status === 'mottagen').map((m) => ({ id: m.id, typ: m.typ, filnamn: m.filnamn, mime: m.mime, storlek: m.storlek, sha256: m.sha256, url: m.url, beskrivning: m.beskrivning, mottaget: m.mottaget, revision: m.revision, extraktion: m.extraktion, lasning: m.lasning, lasstatus: m.lasning ? 'last' : m.extraktion ? 'extraherad' : 'mottagen' })),
     foljdregler_utlosta: a.foljdregler_utlosta,
     foljdregler_negerade: a.foljdregler_negerade || [],

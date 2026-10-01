@@ -3,7 +3,7 @@
 import { list } from '@vercel/blob';
 import { lasDok, uppdateraDok } from './lagring';
 import type { Arende, Signal } from './typer';
-import { Vagrad, nu } from './arende';
+import { Vagrad, nu, sattFas } from './arende';
 import { serUtSomHemlighet } from './bank';
 
 export function signalera(a: Arende, typ: Signal['typ'] = 'komplettering') {
@@ -87,6 +87,7 @@ export async function returfragor(id: string, p: { idempotens: string; bas_revis
       a.fragor.push({ ...f, id: fid, omrade: 'H', kalla: 'returfraga', typ: 'oppen', omgang: a.omgang, stalld: nu(), status: 'stalld', valjare: 'regelstyrd' });
     }
     (a.returfragor ??= []).push({ idempotens: p.idempotens, bas_revision: p.bas_revision, utforare: p.utforare, fragor: ids, tid: nu() });
+    sattFas(a, 'intervju', 'digitala'); // returfrågorna besvaras i samtalet; därefter går kunden tillbaka till granskningen
     a.handelser.push({ typ: 'returfragor', tid: nu(), revision: a.revision, detaljer: { utforare: p.utforare, fragor: ids } });
     return a;
   })).data;
