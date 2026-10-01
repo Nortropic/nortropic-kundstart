@@ -599,6 +599,12 @@ test('Testlägets val: listorna, privat fil, syntesens eget val, oläsbar fil sk
   const fil = path.join(dir, 'data', 'installningar.json');
   try {
     assert.deepEqual(P.lasProv(), { modell: 'claude-opus-5-5', anstrangning: 'max' }, 'standardvalet utan fil');
+    // Statusraden i npm run prov (scripts/prov.mjs) visar samma standard som tjänsten kör med: skriptet kan inte importera TypeScript,
+    // så dess egen konstant jämförs här mot lib/provlage.ts (2026-10-01 sade den "low (standard)" medan tjänsten körde max).
+    const provMjs = fs.readFileSync(path.join(__dirname, '../../scripts/prov.mjs'), 'utf8');
+    const s = P.lasProv(); const ss = P.lasSyntesProv();
+    assert.match(provMjs, new RegExp(`const STANDARD = \\{ modell: '${s.modell}', anstrangning: '${s.anstrangning}' \\}`), 'scripts/prov.mjs har samma standard som lib/provlage.ts');
+    assert.deepEqual(ss, s, 'syntesens standard är densamma som turens (prov.mjs visar en STANDARD för båda)');
     assert.deepEqual(P.lasSyntesProv(), { modell: 'claude-opus-5-5', anstrangning: 'max' }, 'syntesens standardval utan fil');
     assert.deepEqual(P.sparaProv('claude-sonnet-5', 'high'), { modell: 'claude-sonnet-5', anstrangning: 'high' });
     assert.equal(fs.statSync(fil).mode & 0o777, 0o600); assert.equal(fs.statSync(path.join(dir, 'data')).mode & 0o777, 0o700);

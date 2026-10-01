@@ -74,12 +74,17 @@ function envLokal() {
   return ut;
 }
 
+// Samma standard som lib/provlage.ts (STANDARD och SYNTES_STANDARD, ägarens beslut 2026-10-01); kärnprovet i
+// tests/core/agent.cjs läser den här raden och jämför, så att statusraden aldrig säger ett annat val än tjänsten kör med.
+const STANDARD = { modell: 'claude-opus-5-5', anstrangning: 'max' };
 function modellval() {
   try {
     const d = JSON.parse(readFileSync(join(DATA, 'installningar.json'), 'utf8'));
-    return `${d.modell || 'claude-opus-5-5'} · ${d.anstrangning || 'low'}`;
+    const tur = `${d.modell || STANDARD.modell} · ${d.anstrangning || STANDARD.anstrangning}`;
+    const syntes = `${d.syntes_modell || STANDARD.modell} · ${d.syntes_anstrangning || STANDARD.anstrangning}`;
+    return `${tur}, syntes ${syntes}`;
   } catch {
-    return 'claude-opus-5-5 · low (standard)';
+    return `${STANDARD.modell} · ${STANDARD.anstrangning} (standard, också syntesen)`;
   }
 }
 
