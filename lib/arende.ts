@@ -98,6 +98,16 @@ export function kundRevision(a: Arende): number {
   return Math.max(0, ...a.svar.map((s) => s.revision), ...a.rattelser.map((r) => r.revision), ...a.material.map((m) => m.revision), ...(a.tillval || []).map((t) => t.revision));
 }
 
+/**
+ * Är sammanfattningen aktuell? Syntesens egna skrivningar (tillval ur kundens ord) sker på dess egen revision
+ * (`syntes.revision`), så den jämförs mot kundens senaste ändring; varje kundändring efter syntesen får en högre revision.
+ * `bas_revision` är det syntesen läste och duger inte som mått: granskningsrunda 1 (2026-10-01) visade att en korrekt
+ * syntes som noterade tillval genast visades som inaktuell.
+ */
+export function syntesAktuell(a: Arende): boolean {
+  return a.syntes?.status === 'klar' && kundRevision(a) <= a.syntes.revision;
+}
+
 /** Har kunden (eller Digitala med returfrågor) ändrat något efter en inlämning eller en sammanfattning? */
 export function andratEfter(a: Arende, bas: { revision: number; tid?: string }): boolean {
   return a.fragor.some((f) => f.status === 'stalld' && (f.kalla === 'returfraga' || (f.oppnad_revision || 0) > bas.revision || (bas.tid !== undefined && f.stalld > bas.tid))) || kundRevision(a) > bas.revision;
@@ -1164,7 +1174,7 @@ export async function syntes(id: string, opts: { igen?: boolean } = {}): Promise
     return (fas === 'avslut' || (Boolean(opts.igen) && (fas === 'granskning' || fas === 'inlamnat'))) && !a.fragor.some((f) => f.status === 'stalld');
   };
   if (!kan(forsta)) return { a: forsta, utford: false, fallback: false };
-  if (!opts.igen && forsta.syntes?.status === 'klar' && forsta.syntes.bas_revision >= kundRevision(forsta)) {
+  if (!opts.igen && syntesAktuell(forsta)) {
     if (fasAv(forsta) !== 'avslut') return { a: forsta, utford: false, fallback: false };
     const r = await uppdateraDok<Arende>(arendeStig(id), (a) => { if (fasAv(a) !== 'avslut') return null; bump(a); sattFas(a, 'granskning', 'kund'); return a; });
     return { a: r.data, utford: false, fallback: false };

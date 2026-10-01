@@ -1,6 +1,6 @@
 // Vyn som kundens webbläsare får: inga lagringssökvägar, inga idempotensnycklar, ingen händelselogg, ingen kostnad.
 // Samtalet och "Ditt uppdrag" är två vyer av samma ärende och byggs här ur samma dokument.
-import { AVSLUT_EFTER_FRAGOR, andratEfter, aterstar, bild, effektivtLage, fasAv, kundRevision, transkript, type BildRad, type TranskriptRad } from './arende';
+import { AVSLUT_EFTER_FRAGOR, andratEfter, aterstar, bild, effektivtLage, fasAv, syntesAktuell, transkript, type BildRad, type TranskriptRad } from './arende';
 import { SAMTYCKE } from './samtycke';
 import { provVy, type ProvVy } from './provlage';
 import { BANK, rubrik } from './bank';
@@ -187,7 +187,7 @@ export function tillVy(a: Arende): Vy {
     fas,
     framsteg: lageNu === 'regelstyrd' && fas === 'intervju' ? { nr: a.fragor.filter((f) => f.status !== 'tackt').length, ungefar: AVSLUT_EFTER_FRAGOR } : null,
     syntes: a.syntes && (a.syntes.status !== 'misslyckad' || a.syntes.sammanfattning)
-      ? { id: a.syntes.id, status: a.syntes.status, sammanfattning: a.syntes.sammanfattning, nyckelinsikt: a.syntes.nyckelinsikt, oppet: a.syntes.oppet.map((o) => ({ nyckel: o.nyckel, rubrik: rubrik(o.nyckel), varfor: o.varfor })), tid: a.syntes.tid, valjare: a.syntes.valjare, aktuell: a.syntes.status === 'klar' && a.syntes.bas_revision >= kundRevision(a) }
+      ? { id: a.syntes.id, status: a.syntes.status, sammanfattning: a.syntes.sammanfattning, nyckelinsikt: a.syntes.nyckelinsikt, oppet: a.syntes.oppet.map((o) => ({ nyckel: o.nyckel, rubrik: rubrik(o.nyckel), varfor: o.varfor })), tid: a.syntes.tid, valjare: a.syntes.valjare, aktuell: syntesAktuell(a) }
       : null,
     transkript: transkript(a),
     samtycke: { version: SAMTYCKE.version, text: SAMTYCKE.text },

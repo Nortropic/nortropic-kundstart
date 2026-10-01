@@ -582,12 +582,27 @@ export function valideraNoteringar(d: NoteringarData, k: AgentKontext): Notering
   return { uppgifter, behov, tillval_val, tillval_rekommendation, tackning, research, avvisade };
 }
 
+/**
+ * Citat inom ”…” (eller "…") i den kundvända texten måste stå ordagrant i kundens svar eller material: granskningssidan
+ * lovar att citaten är ordagranna. Ett citat utan källa förlorar citattecknen, så texten inte utger sig för att vara
+ * kundens ord, och bokförs som avvisat (verktyg `sammanfattning`).
+ */
+function utanOverifieradeCitat(text: string, k: AgentKontext, avvisade: Avvisad[]): string {
+  const kallor = [...k.svarKallor.values(), ...k.materialKallor.values()].map((s) => s.text);
+  return text.replace(/[”"]([^”"]{2,}?)[”"]/g, (hel, citat: string) => {
+    if (kallor.some((t) => t.includes(citat))) return hel;
+    avvisade.push({ verktyg: 'sammanfattning', orsak: 'citat_saknas_i_kundens_svar', citat_sha256: citatHash(citat) });
+    return citat;
+  });
+}
+
 /** Validerar syntesen: formen och en icke-tom sammanfattning krävs; varje notering prövas var för sig. */
 export function valideraSyntes(rå: unknown, k: AgentKontext): SyntesUtdata | null {
   const p = SyntesRå.safeParse(rå);
   if (!p.success) return null;
   const d = p.data;
-  const sammanfattning = utanListor(rensa(d.sammanfattning, MAX_SAMMANFATTNING));
+  const noteringar = valideraNoteringar(d, k);
+  const sammanfattning = utanOverifieradeCitat(utanListor(rensa(d.sammanfattning, MAX_SAMMANFATTNING)), k, noteringar.avvisade);
   if (!sammanfattning) return null;
   const oppet: SyntesUtdata['oppet'] = [];
   for (const o of d.oppet) {
@@ -595,5 +610,5 @@ export function valideraSyntes(rå: unknown, k: AgentKontext): SyntesUtdata | nu
     if (oppet.length >= 8) break;
     oppet.push({ nyckel: o.nyckel, varfor: rensa(o.varfor, 200) });
   }
-  return { sammanfattning, nyckelinsikt: rensa(d.nyckelinsikt, 300), oppet, ...valideraNoteringar(d, k) };
+  return { sammanfattning, nyckelinsikt: utanOverifieradeCitat(rensa(d.nyckelinsikt, 300), k, noteringar.avvisade), oppet, ...noteringar };
 }

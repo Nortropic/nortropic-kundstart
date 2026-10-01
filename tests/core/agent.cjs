@@ -166,6 +166,20 @@ test('En tur ger nästa fråga med återkoppling och berörda nycklar utan noter
   assert.equal(ex.kunduppgifter[0].citat, 'Vi är en cykelverkstad i Umeå.'); assert.equal(ex.kunduppgifter[0].kalla_id, 'AG1');
   assert(ex.tillval.some((t) => t.id === 'bokning' && t.kundval === 'onskat')); assert.equal(ex.research.length, 1);
   assert.equal(ex.ai.pagaende, undefined, 'låset exporteras inte'); assert.equal(ex.syntes.valjare, 'ai'); assert.equal(ex.fas, 'granskning');
+  // Granskningsrunda 1 (2026-10-01): syntesens egna tillvalsskrivningar sker på dess egen revision och får inte göra den inaktuell för kunden.
+  assert.equal(vy.syntes.aktuell, true, 'en färsk syntes som noterat tillval är aktuell');
+  assert(b.syntes.revision > b.syntes.bas_revision && A.kundRevision(b) === b.syntes.revision, 'tillvalet skrevs på syntesens revision');
+  assert.equal((await A.syntes(b.id)).utford, false, 'aktuell: inget nytt modellanrop'); assert.equal(syntesAnrop(anrop), 1);
+});
+
+test('Citat i sammanfattningen: ordagranna behålls, ett citat utan källa förlorar citattecknen och bokförs som avvisat', async () => {
+  const a = await medSvar();
+  const k = syntesKontext(a);
+  const ut = AG.valideraSyntes(syntesUt({ sammanfattning: 'Ni säger att ”cykelverkstad i Umeå” är kärnan, och att ni "säljer rymdfarkoster" till föreningar.', nyckelinsikt: 'Ni vill att kunderna ska kunna ”boka service själva”.' }), k);
+  assert.equal(ut.sammanfattning, 'Ni säger att ”cykelverkstad i Umeå” är kärnan, och att ni säljer rymdfarkoster till föreningar.');
+  assert.equal(ut.nyckelinsikt, 'Ni vill att kunderna ska kunna ”boka service själva”.');
+  assert.deepEqual(ut.avvisade.map((x) => x.verktyg + ':' + x.orsak), ['sammanfattning:citat_saknas_i_kundens_svar']);
+  assert.equal(ut.avvisade[0].citat_sha256.length, 64, 'citatet bokförs som hash, aldrig i klartext');
 });
 
 test('Kundens citat avgör tillvalet; domänresearch, frågor till kunden och "vi vet inte" som uppgift avvisas eller blir okänt', async () => {
